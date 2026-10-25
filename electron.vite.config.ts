@@ -22,7 +22,10 @@ export default defineConfig({
         apply: 'serve',
         transformIndexHtml(html) {
           // React Refresh injects an inline preamble only during development.
-          return html.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'")
+          return html.replace(
+            "script-src 'self'",
+            "script-src 'self' 'unsafe-inline'",
+          )
         },
       },
     ],

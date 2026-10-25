@@ -13,6 +13,8 @@
     "dev": "electron-vite dev --watch",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/workflow.test.ts",
+    "test:smoke": "npm run build && tsc -p tests/tsconfig.json && electron out/tests/electron.smoke.cjs",
     "build": "npm run typecheck && electron-vite build",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder --win nsis"

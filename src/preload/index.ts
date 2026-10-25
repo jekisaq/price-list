@@ -1,2 +1,13 @@
-// Здесь будет размещён типизированный API для связи интерфейса с main.
-export {}
+import { contextBridge, ipcRenderer } from 'electron'
+import { channels } from '../shared/api'
+import type { PriceListApi } from '../shared/api'
+
+const api: PriceListApi = {
+  importTable: (request) => ipcRenderer.invoke(channels.import, request),
+  processTable: (request) => ipcRenderer.invoke(channels.process, request),
+  exportTable: (request) => ipcRenderer.invoke(channels.export, request),
+  getSettings: () => ipcRenderer.invoke(channels.getSettings),
+  saveSettings: (request) => ipcRenderer.invoke(channels.saveSettings, request),
+}
+
+contextBridge.exposeInMainWorld('api', api)

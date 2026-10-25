@@ -1,10 +1,13 @@
 import { app, BrowserWindow } from 'electron'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { registerIpc } from './ipc'
 
 const createWindow = async () => {
   const win = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 1100,
+    height: 800,
+    minWidth: 760,
+    minHeight: 600,
     autoHideMenuBar: true,
     webPreferences: {
       preload: fileURLToPath(new URL('../preload/index.cjs', import.meta.url)),
@@ -15,29 +18,44 @@ const createWindow = async () => {
   })
 
   const rendererPath = fileURLToPath(
-    new URL('../renderer/index.html', import.meta.url)
+    new URL('../renderer/index.html', import.meta.url),
   )
 
-  if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
-    await win.loadURL(process.env.ELECTRON_RENDERER_URL)
+  const devUrl = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined
+  const rendererUrl = devUrl
+    ? new URL(devUrl).href
+    : pathToFileURL(rendererPath).href
+  registerIpc(win, rendererUrl)
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url !== rendererUrl)
+      event.preventDefault()
+  })
+
+  if (devUrl) {
+    await win.loadURL(devUrl)
   } else {
     await win.loadFile(rendererPath)
   }
 }
 
-app.whenReady().then(async () => {
-  await createWindow()
+app
+  .whenReady()
+  .then(async () => {
+    await createWindow()
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      void createWindow()
-    }
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        void createWindow()
+      }
+    })
   })
-}).catch((error: unknown) => {
-  console.error('Не удалось запустить приложение:', error)
-  app.quit()
-})
+  .catch((error: unknown) => {
+    console.error('Не удалось запустить приложение:', error)
+    app.quit()
+  })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  if (process.platform !== 'darwin')
+    app.quit()
 })

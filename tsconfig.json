@@ -8,10 +8,11 @@
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "types": ["node", "vite/client"],
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "isolatedModules": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "electron.vite.config.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "electron.vite.config.ts", "tests/**/*.ts"],
   "exclude": ["node_modules", "out", "release"]
 }
