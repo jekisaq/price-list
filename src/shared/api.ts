@@ -105,12 +105,12 @@ export interface ProcessedRow {
 }
 export interface ExportRequest {
   resultId: string
+  format: ExportFormat
   confirmExcluded?: boolean
 }
-export interface ExportResult {
-  canceled: boolean
-  path?: string
-}
+export type ExportFormat = 'csv' | 'xlsx'
+export type ExportResult =
+  { canceled: true } | { canceled: false; path: string; count: number }
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
 export interface PriceListApi {
   openFile(): Promise<Result<SourceFile | null>>

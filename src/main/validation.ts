@@ -1,5 +1,6 @@
 import type {
   ImportOptions,
+  ExportFormat,
   ProcessRequest,
   ProcessResult,
   Settings,
@@ -66,6 +67,14 @@ export function currentResult(
     throw new Error('Результат устарел. Выполните проверку таблицы снова.')
 
   return result
+}
+
+export function exportFormat(value: unknown): ExportFormat {
+  const { format } = object(value)
+  if (format !== 'csv' && format !== 'xlsx')
+    throw new Error('Выберите формат экспорта CSV или XLSX.')
+
+  return format
 }
 
 export function productExport(

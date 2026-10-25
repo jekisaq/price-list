@@ -131,6 +131,71 @@ async function smoke() {
   assert.ok(
     (await readFile(exportPath, 'utf8')).includes('"001";"Блокнот";"144.00"'),
   )
+  await waitText('Сохранено товаров: 3. Формат: CSV.')
+  await changeField('Формат экспорта', 'xlsx')
+  dialog.showSaveDialog = async () => ({ canceled: true, filePath: '' })
+  await click('Сохранить XLSX…')
+  await waitText('Сохранение отменено.')
+  dialog.showSaveDialog = async () => ({
+    canceled: false,
+    filePath: resolve('out/tests', `missing-${Date.now()}`, 'price-list.xlsx'),
+  })
+  await click('Сохранить XLSX…')
+  await waitText('Папка для сохранения не найдена.')
+  // A mismatched extension must not overwrite a previous CSV with XLSX bytes.
+  const previousCsv = await readFile(exportPath, 'utf8')
+  dialog.showSaveDialog = async () => ({
+    canceled: false,
+    filePath: exportPath,
+  })
+  await click('Сохранить XLSX…')
+  await waitText('Укажите имя файла с расширением .xlsx.')
+  assert.equal(await readFile(exportPath, 'utf8'), previousCsv)
+  const exportedXlsxPath = resolve('out/tests/exported-price-list.xlsx')
+  dialog.showSaveDialog = async (...args: unknown[]) => {
+    const options = args[1] as {
+      defaultPath: string
+      filters: { name: string; extensions: string[] }[]
+    }
+    assert.equal(options.defaultPath, 'price-list.xlsx')
+    assert.deepEqual(options.filters, [{ name: 'XLSX', extensions: ['xlsx'] }])
+    return { canceled: false, filePath: exportedXlsxPath.slice(0, -5) }
+  }
+  await click('Сохранить XLSX…')
+  await waitText('Сохранено товаров: 3. Формат: XLSX.')
+  await waitText(exportedXlsxPath)
+  const exportedWorkbook = new ExcelJS.Workbook()
+  await exportedWorkbook.xlsx.readFile(exportedXlsxPath)
+  const exportedSheet = exportedWorkbook.worksheets[0]!
+  assert.deepEqual(
+    [1, 2, 3].map((column) => exportedSheet.getCell(1, column).value),
+    ['Артикул', 'Наименование', 'Цена'],
+  )
+  assert.equal(exportedSheet.getCell('A2').value, '001')
+  assert.equal(exportedSheet.getCell('A2').type, ExcelJS.ValueType.String)
+  assert.equal(exportedSheet.getCell('C2').value, 144)
+  assert.equal(exportedSheet.getCell('C2').type, ExcelJS.ValueType.Number)
+  assert.equal(exportedSheet.getCell('C2').numFmt, '0.00')
+  await capture('xlsx-export.png')
+  // Reopen the exported workbook through the real import UI.
+  await click('Новый импорт')
+  dialog.showOpenDialog = async () => ({
+    canceled: false,
+    filePaths: [exportedXlsxPath],
+  })
+  await click('Выбрать CSV / XLSX…')
+  await waitText('Файл: exported-price-list.xlsx')
+  await click('Показать предпросмотр')
+  await waitText('Строк товаров: 3')
+  await click('Перейти к сопоставлению')
+  await click('Проверить и рассчитать')
+  await waitText('172.80')
+  await click('Перейти к экспорту')
+  await changeField('Формат экспорта', 'csv')
+  dialog.showSaveDialog = async () => ({
+    canceled: false,
+    filePath: exportPath,
+  })
   await capture('workflow.png')
   await click('Новый импорт')
   await waitText('Загрузить демонстрационную таблицу')
@@ -476,24 +541,27 @@ async function smoke() {
       mapping: { sku: 0, name: 1, price: 2 }, markup: 20, duplicatePolicy: 'first',
       corrections: [{ sourceRow: 3, sku: '001' }] });
     if (!processed.ok) throw new Error(processed.error);
-    const noConfirmation = await window.api.exportTable({ resultId: processed.value.id });
+    const noConfirmation = await window.api.exportTable({ resultId: processed.value.id, format: 'csv' });
     const malformed = await window.api.exportReport({ resultId: '../file' });
+    const invalidFormat = await window.api.exportTable({ resultId: processed.value.id, format: 'xls', confirmExcluded: true });
     const oldId = processed.value.id;
     await window.api.processTable({ importId: imported.value.id, mapping: { sku: 0, name: 1, price: 2 }, markup: 20 });
     const stale = await window.api.exportReport({ resultId: oldId });
-    return { noConfirmation, malformed, stale };
+    return { noConfirmation, malformed, stale, invalidFormat };
   })()`)) as {
     noConfirmation: { ok: boolean; error: string }
+    invalidFormat: { ok: boolean }
     malformed: { ok: boolean }
     stale: { ok: boolean }
   }
   assert.equal(apiChecks.noConfirmation.ok, false)
   assert.match(apiChecks.noConfirmation.error, /Подтвердите пропуск/)
+  assert.equal(apiChecks.invalidFormat.ok, false)
   assert.equal(apiChecks.malformed.ok, false)
   assert.equal(apiChecks.stale.ok, false)
 
   console.log(
-    'PASS: imports, mapping suggestions, manual mapping, validation, live preview, skipped columns, leading zeros, duplicate corrections, rounding, report filters, report export and exclusion confirmation',
+    'PASS: imports, mapping suggestions, manual mapping, validation, live preview, skipped columns, leading zeros, duplicate corrections, rounding, report filters, report export, exclusion confirmation, CSV/XLSX export, file failures and round-trip import',
   )
 }
 

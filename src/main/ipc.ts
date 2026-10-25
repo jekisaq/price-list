@@ -1,5 +1,4 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
-import { writeFile } from 'node:fs/promises'
 import { channels } from '../shared/api'
 import type {
   ImportedTable,
@@ -15,14 +14,15 @@ import {
   settings,
   currentResult,
   productExport,
+  exportFormat,
 } from './validation'
-import {
-  demoTable,
-  processTable,
-  toCsv,
-  toReportCsv,
-} from './services/workflow'
+import { demoTable, processTable, toReportCsv } from './services/workflow'
 import { importSource, loadSource, preview } from './services/import-file'
+import {
+  destinationPath,
+  saveFile,
+  savePriceList,
+} from './services/export-file'
 import type { LoadedSource } from './services/import-file'
 
 export function registerIpc(window: BrowserWindow, rendererUrl: string): void {
@@ -130,17 +130,17 @@ export function registerIpc(window: BrowserWindow, rendererUrl: string): void {
   })
 
   handle(channels.export, async (input) => {
+    const format = exportFormat(input)
     const snapshot = productExport(input, processed)
     const selection = await dialog.showSaveDialog(window, {
       title: 'Экспорт прайс-листа',
-      defaultPath: 'price-list.csv',
-      filters: [{ name: 'CSV', extensions: ['csv'] }],
+      defaultPath: `price-list.${format}`,
+      filters: [{ name: format.toUpperCase(), extensions: [format] }],
     })
     if (selection.canceled || !selection.filePath)
       return { canceled: true }
 
-    await writeFile(selection.filePath, toCsv(snapshot), 'utf8')
-    return { canceled: false, path: selection.filePath }
+    return savePriceList(selection.filePath, format, snapshot)
   })
 
   handle(channels.exportReport, async (input) => {
@@ -153,8 +153,9 @@ export function registerIpc(window: BrowserWindow, rendererUrl: string): void {
     if (selection.canceled || !selection.filePath)
       return { canceled: true }
 
-    await writeFile(selection.filePath, toReportCsv(snapshot), 'utf8')
-    return { canceled: false, path: selection.filePath }
+    const path = destinationPath(selection.filePath, 'csv')
+    await saveFile(path, toReportCsv(snapshot))
+    return { canceled: false, path, count: snapshot.issues.length }
   })
 
   handle(channels.getSettings, (input) => {

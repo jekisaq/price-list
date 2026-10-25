@@ -251,7 +251,7 @@ export function processTable(
 
 function serializeCsv(rows: string[][]): string {
   const cell = (value: string) => {
-    const safe = /^\s*[=+@-]/.test(value) ? `'${value}` : value
+    const safe = /^[\s\u0000-\u001f]*[=+@-]/.test(value) ? `'${value}` : value
     return `"${safe.replaceAll('"', '""')}"`
   }
   return '\uFEFF' + rows.map((row) => row.map(cell).join(';')).join('\r\n')

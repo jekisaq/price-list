@@ -19,6 +19,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import type {
   DraftMapping,
+  ExportFormat,
   ImportedTable,
   ProcessResult,
   Result,
@@ -52,6 +53,7 @@ export function App() {
   const [pendingCorrections, setPendingCorrections] = useState(false)
   const [result, setResult] = useState<ProcessResult>()
   const [confirmedResult, setConfirmedResult] = useState('')
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('csv')
   const [busy, setBusy] = useState(false)
   const [ready, setReady] = useState(false)
   const [error, setError] = useState('')
@@ -441,9 +443,30 @@ export function App() {
         {step === 3 && result && (
           <>
             <Typography color="text.secondary" sx={{ mb: 2 }}>
-              Товаров к экспорту: {result.products.length}. Формат CSV: артикул,
+              Товаров к экспорту: {result.products.length}. Колонки: артикул,
               наименование и цена с наценкой.
             </Typography>
+            <TextField
+              select
+              label="Формат экспорта"
+              value={exportFormat}
+              disabled={busy}
+              sx={{ mb: 2, maxWidth: 480 }}
+              slotProps={{ select: { native: true } }}
+              helperText={
+                exportFormat === 'xlsx'
+                  ? 'Артикулы сохраняются как текст, цены — как числа с двумя десятичными знаками.'
+                  : 'CSV — текстовый формат. Чтобы Excel сохранил типы и ведущие нули, выберите XLSX.'
+              }
+              onChange={(event) => {
+                setExportFormat(event.target.value as ExportFormat)
+                setNotice('')
+                setError('')
+              }}
+            >
+              <option value="csv">CSV</option>
+              <option value="xlsx">XLSX (Excel)</option>
+            </TextField>
             {result.excludedRows.length > 0 && (
               <Stack spacing={1} sx={{ mb: 2 }}>
                 <Alert severity="warning">
@@ -494,18 +517,19 @@ export function App() {
                     const exported = unwrap(
                       await window.api.exportTable({
                         resultId: result.id,
+                        format: exportFormat,
                         confirmExcluded: confirmedResult === result.id,
                       }),
                     )
                     setNotice(
                       exported.canceled
                         ? 'Сохранение отменено. Можно попробовать снова.'
-                        : `Файл сохранён: ${exported.path}`,
+                        : `Файл сохранён: ${exported.path}. Сохранено товаров: ${exported.count}. Формат: ${exportFormat.toUpperCase()}.`,
                     )
                   })
                 }
               >
-                Сохранить CSV…
+                Сохранить {exportFormat.toUpperCase()}…
               </Button>
               <Button
                 variant="outlined"
