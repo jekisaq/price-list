@@ -35,13 +35,19 @@ test('suggestions normalize Russian headers and support reordered columns', () =
     suggestMapping(['Артикул', 'Наименование', 'Цена закупки']),
     { sku: 0, name: 1, price: 2 },
   )
-  assert.deepEqual(
-    mappingCandidates(['Категория', 'Остаток', 'Примечание']),
-    { sku: [], name: [], price: [] },
-  )
-  assert.deepEqual(suggestMapping(['Артикул', 'Описание позиции', 'Стоимость']), {
-    sku: 0, name: null, price: 2,
+  assert.deepEqual(mappingCandidates(['Категория', 'Остаток', 'Примечание']), {
+    sku: [],
+    name: [],
+    price: [],
   })
+  assert.deepEqual(
+    suggestMapping(['Артикул', 'Описание позиции', 'Стоимость']),
+    {
+      sku: 0,
+      name: null,
+      price: 2,
+    },
+  )
 })
 
 test('unknown and ambiguous columns remain unselected, never guessed by position', () => {
@@ -60,7 +66,11 @@ test('unknown and ambiguous columns remain unselected, never guessed by position
     { sku: null, name: 2, price: 3 },
   )
   assert.deepEqual(mappingCandidates(['Цена', 'Стоимость']).price, [0, 1])
-  assert.deepEqual(suggestMapping(['Артикул']), { sku: 0, name: null, price: null })
+  assert.deepEqual(suggestMapping(['Артикул']), {
+    sku: 0,
+    name: null,
+    price: null,
+  })
 })
 
 test('required, duplicate, invalid, fractional and stale indexes are rejected on both sides', () => {
@@ -118,6 +128,8 @@ test('reordered supplier exports only the standard fields', async () => {
     sku: 'ST-0001',
     name: 'Блокнот А5',
     price: 120,
+    originalPrice: 120,
+    sourceRow: 2,
   })
   const csv = toCsv(result)
   assert.ok(csv.startsWith('\uFEFF"Артикул";"Наименование";"Цена"'))

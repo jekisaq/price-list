@@ -53,7 +53,12 @@ export function identifier(value: unknown): string {
 }
 
 export function settings(value: unknown): Settings {
-  const { markup } = object(value)
+  const {
+    markup,
+    duplicatePolicy = 'manual',
+    roundingMode = 'nearest',
+    roundingStep = 0.01,
+  } = object(value)
   if (
     typeof markup !== 'number' ||
     !Number.isFinite(markup) ||
@@ -62,7 +67,27 @@ export function settings(value: unknown): Settings {
   ) {
     throw new Error('Наценка должна быть числом от 0 до 1000%.')
   }
-  return { markup }
+  if (
+    duplicatePolicy !== 'manual' &&
+    duplicatePolicy !== 'first' &&
+    duplicatePolicy !== 'last'
+  )
+    throw new Error('Некорректное правило обработки дублей.')
+
+  if (
+    roundingMode !== 'nearest' &&
+    roundingMode !== 'up' &&
+    roundingMode !== 'down'
+  )
+    throw new Error('Некорректный способ округления.')
+
+  if (roundingStep !== 0.01 && roundingStep !== 1 && roundingStep !== 10)
+    throw new Error('Некорректный шаг округления.')
+
+  if (!/^\d+(?:\.\d{1,2})?$/.test(String(markup)))
+    throw new Error('Укажите наценку с точностью до двух знаков после запятой.')
+
+  return { markup, duplicatePolicy, roundingMode, roundingStep }
 }
 
 export function processRequest(
@@ -74,7 +99,28 @@ export function processRequest(
   if (!validation.valid)
     throw new Error(Object.values(validation.errors).join(' '))
 
+  const corrections = data.corrections ?? []
+  if (!Array.isArray(corrections) || corrections.length > 100_000)
+    throw new Error('Некорректный список исправлений.')
+
+  const seen = new Set<number>()
+  const validatedCorrections = corrections.map((entry: unknown) => {
+    const correction = object(entry)
+    if (
+      typeof correction.sourceRow !== 'number' ||
+      !Number.isSafeInteger(correction.sourceRow) ||
+      correction.sourceRow < 1 ||
+      typeof correction.sku !== 'string' ||
+      correction.sku.length > 1000 ||
+      seen.has(correction.sourceRow)
+    )
+      throw new Error('Некорректное исправление артикула.')
+
+    seen.add(correction.sourceRow)
+    return { sourceRow: correction.sourceRow, sku: correction.sku }
+  })
   return {
+    corrections: validatedCorrections,
     importId: identifier(data.importId),
     mapping: validation.mapping,
     ...settings(data),

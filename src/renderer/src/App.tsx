@@ -25,6 +25,7 @@ import type {
   ImportedTable,
   ProcessResult,
   Result,
+  Settings,
 } from '../../shared/api'
 
 const steps = ['Загрузка', 'Сопоставление', 'Проверка', 'Экспорт']
@@ -44,6 +45,14 @@ export function App() {
     price: null,
   })
   const [markup, setMarkup] = useState('20')
+  const [options, setOptions] = useState<Settings>({
+    markup: 20,
+    duplicatePolicy: 'manual',
+    roundingMode: 'nearest',
+    roundingStep: 0.01,
+  })
+  const [corrections, setCorrections] = useState<Record<number, string>>({})
+  const [pendingCorrections, setPendingCorrections] = useState(false)
   const [result, setResult] = useState<ProcessResult>()
   const [busy, setBusy] = useState(false)
   const [ready, setReady] = useState(false)
@@ -59,6 +68,7 @@ export function App() {
 
         if (active) {
           setMarkup(String(settings.markup))
+          setOptions(settings)
           setReady(true)
         }
       })
@@ -98,7 +108,40 @@ export function App() {
     markup.trim() !== '' &&
     Number.isFinite(Number(markup)) &&
     Number(markup) >= 0 &&
-    Number(markup) <= 1000
+    Number(markup) <= 1000 &&
+    /^\d+(?:\.\d{1,2})?$/.test(markup)
+
+  async function calculate() {
+    if (!table || !mappingValidation.valid)
+      throw new Error('Проверьте сопоставление обязательных полей.')
+
+    const settings = { ...options, markup: Number(markup) }
+    unwrap(await window.api.saveSettings(settings))
+    const next = unwrap(
+      await window.api.processTable({
+        ...settings,
+        importId: table.id,
+        mapping: mappingValidation.mapping,
+        corrections: Object.entries(corrections).map(([sourceRow, sku]) => ({
+          sourceRow: Number(sourceRow),
+          sku,
+        })),
+      }),
+    )
+    setResult(next)
+    setPendingCorrections(false)
+    setStep(2)
+  }
+
+  const correctionRows = new Map(
+    Object.entries(corrections).map(([sourceRow, sku]) => [
+      Number(sourceRow),
+      { sourceRow: Number(sourceRow), sku, name: '' },
+    ]),
+  )
+  for (const row of result?.duplicates ?? []) {
+    correctionRows.set(row.sourceRow, row)
+  }
 
   return (
     <Container component="main" maxWidth="md" sx={{ py: { xs: 3, sm: 5 } }}>
@@ -163,12 +206,16 @@ export function App() {
             table={table}
             run={run}
             onReset={() => {
+              setCorrections({})
+              setPendingCorrections(false)
               setTable(undefined)
               setResult(undefined)
               setNotice('')
               setError('')
             }}
             onImported={(imported) => {
+              setCorrections({})
+              setPendingCorrections(false)
               setTable(imported)
               setResult(undefined)
               setMapping(suggestMapping(imported.columns))
@@ -183,6 +230,8 @@ export function App() {
               mapping={mapping}
               busy={busy}
               onChange={(next) => {
+                setCorrections({})
+                setPendingCorrections(false)
                 setMapping(next)
                 setResult(undefined)
                 setError('')
@@ -195,11 +244,11 @@ export function App() {
               error={!validMarkup}
               helperText={
                 !validMarkup
-                  ? 'Введите наценку от 0 до 1000%.'
+                  ? 'Введите наценку от 0 до 1000%, до двух десятичных знаков.'
                   : 'Применяется на следующем шаге'
               }
               type="number"
-              slotProps={{ htmlInput: { min: 0, max: 1000, step: 0.1 } }}
+              slotProps={{ htmlInput: { min: 0, max: 1000, step: 0.01 } }}
               value={markup}
               sx={{ maxWidth: 300, mt: 1 }}
               onChange={(event) => {
@@ -207,6 +256,77 @@ export function App() {
                 setResult(undefined)
               }}
             />
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={2}
+              sx={{ mt: 2 }}
+            >
+              <TextField
+                select
+                label="Обработка дублей"
+                value={options.duplicatePolicy ?? 'manual'}
+                disabled={busy}
+                slotProps={{ select: { native: true } }}
+                onChange={(event) => {
+                  setOptions({
+                    ...options,
+                    duplicatePolicy: event.target
+                      .value as Settings['duplicatePolicy'],
+                  })
+                  setResult(undefined)
+                }}
+              >
+                <option value="manual">Исправить вручную</option>
+                <option value="first">Оставить первую строку</option>
+                <option value="last">Оставить последнюю строку</option>
+              </TextField>
+              <TextField
+                select
+                label="Округление"
+                value={options.roundingMode ?? 'nearest'}
+                disabled={busy}
+                slotProps={{ select: { native: true } }}
+                onChange={(event) => {
+                  setOptions({
+                    ...options,
+                    roundingMode: event.target
+                      .value as Settings['roundingMode'],
+                  })
+                  setResult(undefined)
+                }}
+              >
+                <option value="nearest">До ближайшего</option>
+                <option value="up">Вверх</option>
+                <option value="down">Вниз</option>
+              </TextField>
+              <TextField
+                select
+                label="Шаг округления"
+                value={options.roundingStep ?? 0.01}
+                disabled={busy}
+                slotProps={{ select: { native: true } }}
+                onChange={(event) => {
+                  setOptions({
+                    ...options,
+                    roundingStep: Number(
+                      event.target.value,
+                    ) as Settings['roundingStep'],
+                  })
+                  setResult(undefined)
+                }}
+              >
+                <option value="0.01">0,01</option>
+                <option value="1">1</option>
+                <option value="10">10</option>
+              </TextField>
+            </Stack>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+              Дубли определяются по артикулу с учётом регистра. Пробелы по краям
+              удаляются, повторные пробелы заменяются одним; ведущие нули
+              сохраняются. Цена: от 0 до 1 000 000 000, например 1 234,56 или
+              1234.56. Наценка всегда рассчитывается от импортированной цены.
+              При округлении до ближайшего середина округляется вверх.
+            </Typography>
             <Stack
               direction="row"
               spacing={1.5}
@@ -226,29 +346,7 @@ export function App() {
               </Button>
               <Button
                 disabled={busy || !mappingValidation.valid || !validMarkup}
-                onClick={() =>
-                  void run(async () => {
-                    if (!mappingValidation.valid)
-                      throw new Error(
-                        'Проверьте сопоставление обязательных полей.',
-                      )
-
-                    setResult(undefined)
-                    unwrap(
-                      await window.api.saveSettings({ markup: Number(markup) }),
-                    )
-                    setResult(
-                      unwrap(
-                        await window.api.processTable({
-                          importId: table.id,
-                          mapping: mappingValidation.mapping,
-                          markup: Number(markup),
-                        }),
-                      ),
-                    )
-                    setStep(2)
-                  })
-                }
+                onClick={() => void run(calculate)}
               >
                 Проверить и рассчитать
               </Button>
@@ -268,20 +366,62 @@ export function App() {
                 ))}
               </Box>
             )}
+            {result.excludedRows.length > 0 && (
+              <Alert severity="warning">
+                Исключены повторные строки: {result.excludedRows.join(', ')}.
+              </Alert>
+            )}
+            {(options.duplicatePolicy ?? 'manual') === 'manual' &&
+              correctionRows.size > 0 && (
+                <Stack spacing={2} sx={{ my: 2 }}>
+                  <Typography>
+                    Исправьте артикулы повторяющихся товаров и пересчитайте
+                    результат.
+                  </Typography>
+                  {[...correctionRows.values()].map((row) => (
+                    <TextField
+                      key={row.sourceRow}
+                      label={`Артикул — строка ${row.sourceRow}`}
+                      helperText={row.name}
+                      disabled={busy}
+                      value={corrections[row.sourceRow] ?? row.sku}
+                      onChange={(event) => {
+                        setCorrections({
+                          ...corrections,
+                          [row.sourceRow]: event.target.value,
+                        })
+                        setPendingCorrections(true)
+                      }}
+                    />
+                  ))}
+                  <Button disabled={busy} onClick={() => void run(calculate)}>
+                    Пересчитать исправления
+                  </Button>
+                </Stack>
+              )}
+            {pendingCorrections && (
+              <Alert severity="info">
+                Предпросмотр устарел. Пересчитайте исправления.
+              </Alert>
+            )}
             <TableContainer sx={{ my: 3 }}>
               <Table size="small">
                 <TableHead>
                   <TableRow>
+                    <TableCell>Строка</TableCell>
                     <TableCell>Артикул</TableCell>
                     <TableCell>Наименование</TableCell>
+                    <TableCell>Исходная цена</TableCell>
                     <TableCell>Цена с наценкой</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {result.products.map((product) => (
-                    <TableRow key={product.sku}>
+                    <TableRow key={product.sourceRow}>
+                      <TableCell>{product.sourceRow}</TableCell>
                       <TableCell>{product.sku}</TableCell>
                       <TableCell>{product.name}</TableCell>
+                      <TableCell>{product.originalPrice.toFixed(2)}</TableCell>
                       <TableCell>{product.price.toFixed(2)}</TableCell>
                     </TableRow>
                   ))}
@@ -294,12 +434,19 @@ export function App() {
               useFlexGap
               sx={{ flexWrap: 'wrap', mt: 3 }}
             >
-              <Button variant="outlined" onClick={() => setStep(1)}>
+              <Button
+                variant="outlined"
+                disabled={busy}
+                onClick={() => setStep(1)}
+              >
                 Изменить сопоставление
               </Button>
               <Button
                 disabled={
-                  result.errors.length > 0 || result.products.length === 0
+                  busy ||
+                  pendingCorrections ||
+                  result.errors.length > 0 ||
+                  result.products.length === 0
                 }
                 onClick={() => setStep(3)}
               >

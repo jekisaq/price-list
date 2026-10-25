@@ -24,7 +24,7 @@ async function smoke() {
 
   async function capture(name: string) {
     await new Promise((resolveWait) => setTimeout(resolveWait, 100))
-    
+
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const image = await window.webContents.capturePage()
@@ -290,8 +290,76 @@ async function smoke() {
     (await readFile(exportPath, 'utf8')).includes('"000001";"Ручка";"42.00"'),
   )
 
+  await click('Новый импорт')
+  const duplicatesPath = resolve('out/tests/duplicate-prices.csv')
+  await writeFile(
+    duplicatesPath,
+    'Артикул,Наименование,Цена\n001,Первый,"1 234,56"\n001,Второй,"2,05"',
+  )
+  dialog.showOpenDialog = async () => ({
+    canceled: false,
+    filePaths: [duplicatesPath],
+  })
+  await click('Выбрать CSV / XLSX…')
+  await waitText('Файл: duplicate-prices.csv')
+  await click('Показать предпросмотр')
+  await waitText('Строк товаров: 2')
+  await click('Перейти к сопоставлению')
+  await click('Проверить и рассчитать')
+  await waitText('Повторяющийся артикул 001')
+  assert.equal(
+    await evaluate(
+      `[...document.querySelectorAll('button')].find(button => button.textContent === 'Перейти к экспорту').disabled`,
+    ),
+    true,
+  )
+  await changeField('Артикул — строка 3', '')
+  await click('Пересчитать исправления')
+  await waitText('Строка 3: Артикул — обязательное поле.')
+  await changeField('Артикул — строка 3', '002')
+  await waitText('Предпросмотр устарел')
+  await click('Пересчитать исправления')
+  await waitText('Готово товаров: 2. Ошибок: 0.')
+  await waitText('1234.56')
+  await waitText('1481.47')
+  await waitText('2.46')
+  await evaluate(
+    `document.querySelectorAll('table')[document.querySelectorAll('table').length - 1].scrollIntoView({block: 'center'})`,
+  )
+  await capture('processing-preview.png')
+  await click('Перейти к экспорту')
+  await click('Сохранить CSV…')
+  await waitText('Файл сохранён:')
+  assert.ok(
+    (await readFile(exportPath, 'utf8')).includes('"002";"Второй";"2.46"'),
+  )
+  await click('Назад')
+  await click('Изменить сопоставление')
+  // Changing the mapping resets row corrections before testing duplicate policies.
+  await changeField('Артикул', '')
+  await changeField('Артикул', '0')
+  await changeField('Обработка дублей', 'last')
+  await changeField('Округление', 'up')
+  await changeField('Шаг округления', '1')
+  await click('Проверить и рассчитать')
+  await waitText('Исключены повторные строки: 2.')
+  await waitText('3.00')
+  await click('Изменить сопоставление')
+  await changeField('Обработка дублей', 'first')
+  await changeField('Округление', 'down')
+  await changeField('Шаг округления', '10')
+  await click('Проверить и рассчитать')
+  await waitText('Исключены повторные строки: 3.')
+  await waitText('1480.00')
+  await click('Перейти к экспорту')
+  await click('Сохранить CSV…')
+  await waitText('Файл сохранён:')
+  assert.ok(
+    (await readFile(exportPath, 'utf8')).includes('"001";"Первый";"1480.00"'),
+  )
+
   console.log(
-    'PASS: imports, mapping suggestions, manual mapping, validation, live preview, skipped columns, leading zeros and export',
+    'PASS: imports, mapping suggestions, manual mapping, validation, live preview, skipped columns, leading zeros, duplicate corrections, rounding and export',
   )
 }
 

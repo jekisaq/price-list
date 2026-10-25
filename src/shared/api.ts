@@ -18,6 +18,9 @@ export type Mapping = Record<Field, number>
 export type DraftMapping = Record<Field, number | null>
 export interface Settings {
   markup: number
+  duplicatePolicy?: 'manual' | 'first' | 'last'
+  roundingMode?: 'nearest' | 'up' | 'down'
+  roundingStep?: 0.01 | 1 | 10
 }
 export interface ImportedTable {
   id: string
@@ -50,20 +53,24 @@ export type ImportRequest =
       sourceId: string
       options: ImportOptions
     }
-export interface ProcessRequest {
+export interface ProcessRequest extends Settings {
   importId: string
   mapping: Mapping
-  markup: number
+  corrections?: { sourceRow: number; sku: string }[]
 }
 export interface Product {
   sku: string
   name: string
   price: number
+  originalPrice: number
+  sourceRow: number
 }
 export interface ProcessResult {
   id: string
   products: Product[]
   errors: string[]
+  duplicates: { sourceRow: number; sku: string; name: string }[]
+  excludedRows: number[]
 }
 export interface ExportResult {
   canceled: boolean

@@ -71,7 +71,17 @@ test('CSV escapes quotes, delimiters and spreadsheet formulas', () => {
   const csv = toCsv({
     id: 'test',
     errors: [],
-    products: [{ sku: '001', name: '=A1;"value"', price: 1.5 }],
+    duplicates: [],
+    excludedRows: [],
+    products: [
+      {
+        sku: '001',
+        name: '=A1;"value"',
+        price: 1.5,
+        originalPrice: 1.5,
+        sourceRow: 2,
+      },
+    ],
   })
   assert.ok(csv.startsWith('\uFEFF'))
   assert.ok(csv.includes('"001";"\'=A1;""value""";"1.50"'))
