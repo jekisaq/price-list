@@ -1,0 +1,21 @@
+{
+  "name": "price-list",
+  "version": "1.0.0",
+  "description": "Desktop-приложение, которое превращает таблицу поставщика в готовый прайс магазина",
+  "main": "src/main/main.js",
+  "private": "true",
+  "license": "MIT",
+  "author": {
+    "email": "laptew.c@yandex.ru",
+    "name": "C.Laptew"
+  },
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "type": "module",
+  "devDependencies": {
+    "electron": "^45.0.0"
+  }
+}
