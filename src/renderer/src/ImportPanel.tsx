@@ -11,12 +11,14 @@ import type {
   ImportedTable,
   Result,
   SourceFile,
+  SupplierProfile,
 } from '../../shared/api'
 import { ImportPreview } from './ImportPreview'
 
 interface Props {
   busy: boolean
   ready: boolean
+  profile: SupplierProfile | undefined
   table: ImportedTable | undefined
   run: (action: () => Promise<void>) => Promise<void>
   onImported: (table: ImportedTable) => void
@@ -34,6 +36,7 @@ function unwrap<T>(response: Result<T>): T {
 export function ImportPanel({
   busy,
   ready,
+  profile,
   table,
   run,
   onImported,
@@ -41,10 +44,16 @@ export function ImportPanel({
   onNext,
 }: Props) {
   const [source, setSource] = useState<SourceFile>()
-  const [delimiter, setDelimiter] = useState<CsvDelimiter>(',')
-  const [encoding, setEncoding] = useState<CsvEncoding>('utf-8')
-  const [sheet, setSheet] = useState('')
-  const [headerRow, setHeaderRow] = useState('1')
+  const [delimiter, setDelimiter] = useState<CsvDelimiter>(
+    profile?.importOptions.delimiter ?? ',',
+  )
+  const [encoding, setEncoding] = useState<CsvEncoding>(
+    profile?.importOptions.encoding ?? 'utf-8',
+  )
+  const [sheet, setSheet] = useState(profile?.importOptions.sheet ?? '')
+  const [headerRow, setHeaderRow] = useState(
+    String(profile?.importOptions.headerRow ?? 1),
+  )
   const [canceled, setCanceled] = useState(false)
   const validHeader =
     /^\d+$/.test(headerRow) &&
@@ -80,10 +89,18 @@ export function ImportPanel({
               }
               invalidate()
               setSource(selected)
-              setSheet(selected.sheets[0] ?? '')
-              setHeaderRow('1')
-              setDelimiter(',')
-              setEncoding('utf-8')
+              const savedSheet =
+                profile?.format === 'xlsx' ? profile.importOptions.sheet : ''
+              setSheet(
+                savedSheet
+                  ? selected.sheets.includes(savedSheet)
+                    ? savedSheet
+                    : ''
+                  : (selected.sheets[0] ?? ''),
+              )
+              setHeaderRow(String(profile?.importOptions.headerRow ?? 1))
+              setDelimiter(profile?.importOptions.delimiter ?? ',')
+              setEncoding(profile?.importOptions.encoding ?? 'utf-8')
             })
           }
         >
@@ -117,6 +134,18 @@ export function ImportPanel({
           <Typography sx={{ mb: 2, overflowWrap: 'anywhere' }}>
             Файл: {source.name}
           </Typography>
+          {profile && profile.format !== source.format && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              Профиль создан для {profile.format.toUpperCase()}, выбран{' '}
+              {source.format.toUpperCase()}. Проверьте параметры импорта и
+              сопоставление.
+            </Alert>
+          )}
+          {source.format === 'xlsx' && !source.sheets.includes(sheet) && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              Сохранённый лист не найден. Выберите лист вручную.
+            </Alert>
+          )}
           <Box
             sx={{
               display: 'grid',
@@ -170,6 +199,7 @@ export function ImportPanel({
                   invalidate()
                 }}
               >
+                <option value="">— Выберите лист —</option>
                 {source.sheets.map((name) => (
                   <option value={name} key={name}>
                     {name}
@@ -197,7 +227,11 @@ export function ImportPanel({
           </Box>
           <Button
             variant="outlined"
-            disabled={busy || !validHeader}
+            disabled={
+              busy ||
+              !validHeader ||
+              (source.format === 'xlsx' && !source.sheets.includes(sheet))
+            }
             onClick={() =>
               void run(async () => {
                 onReset()

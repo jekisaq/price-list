@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog } from 'electron'
 import assert from 'node:assert/strict'
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import ExcelJS from 'exceljs'
@@ -17,6 +17,7 @@ const loaded = new Promise<BrowserWindow>((resolveWindow) => {
 })
 
 async function smoke() {
+  app.setPath('userData', await mkdtemp(resolve('out/tests/smoke-user-data-')))
   await import(pathToFileURL(resolve('out/main/main.js')).href)
   const window = await loaded
   const evaluate = (script: string) =>

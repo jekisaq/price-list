@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { ImportPanel } from './ImportPanel'
 import { MappingPanel } from './MappingPanel'
 import { ValidationReport } from './ValidationReport'
+import { ProfilePanel } from './ProfilePanel'
+import { restoreProfileMapping } from '../../shared/profiles'
 import Checkbox from '@mui/material/Checkbox'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import { suggestMapping, validateMapping } from '../../shared/mapping'
@@ -22,6 +24,7 @@ import type {
   ExportFormat,
   ImportedTable,
   ProcessResult,
+  ProfilesState,
   Result,
   Settings,
 } from '../../shared/api'
@@ -36,6 +39,9 @@ function unwrap<T>(result: Result<T>): T {
 
 export function App() {
   const [step, setStep] = useState(0)
+  const [profiles, setProfiles] = useState<ProfilesState>()
+  const [importRevision, setImportRevision] = useState(0)
+  const [mappingNotice, setMappingNotice] = useState('')
   const [table, setTable] = useState<ImportedTable>()
   const [mapping, setMapping] = useState<DraftMapping>({
     sku: null,
@@ -62,13 +68,12 @@ export function App() {
   useEffect(() => {
     let active = true
     window.api
-      .getSettings()
+      .getProfiles()
       .then((response) => {
-        const settings = unwrap(response)
+        const preferences = unwrap(response)
 
         if (active) {
-          setMarkup(String(settings.markup))
-          setOptions(settings)
+          applyProfiles(preferences, true)
           setReady(true)
         }
       })
@@ -116,7 +121,12 @@ export function App() {
       throw new Error('Проверьте сопоставление обязательных полей.')
 
     const settings = { ...options, markup: Number(markup) }
-    unwrap(await window.api.saveSettings(settings))
+    if (!profiles?.readOnly) {
+      const saved = unwrap(await window.api.saveSettings(settings))
+      setProfiles((current) =>
+        current ? { ...current, settings: saved } : current,
+      )
+    }
     const next = unwrap(
       await window.api.processTable({
         ...settings,
@@ -132,6 +142,46 @@ export function App() {
     setResult(next)
     setPendingCorrections(false)
     setStep(2)
+  }
+
+  const activeProfile = profiles?.profiles.find(
+    (profile) => profile.id === profiles.activeProfileId,
+  )
+
+  function applyProfiles(next: ProfilesState, reset: boolean) {
+    setProfiles(next)
+    if (reset) {
+      setMarkup(String(next.settings.markup))
+      setOptions(next.settings)
+      setImportRevision((value) => value + 1)
+      setTable(undefined)
+      setResult(undefined)
+      setCorrections({})
+      setPendingCorrections(false)
+      setMappingNotice('')
+      setNotice('')
+      setError('')
+      setStep(0)
+    }
+  }
+
+  async function saveProfile(name: string, update: boolean) {
+    if (!table || !mappingValidation.valid || !validMarkup)
+      throw new Error('Загрузите таблицу и проверьте сопоставление и наценку.')
+
+    const next = unwrap(
+      await window.api.saveProfile({
+        profileId: update
+          ? (profiles?.activeProfileId ?? undefined)
+          : undefined,
+        name,
+        importId: table.id,
+        mapping: mappingValidation.mapping,
+        settings: { ...options, markup: Number(markup) },
+      }),
+    )
+    applyProfiles(next, false)
+    setNotice('Профиль сохранён.')
   }
 
   const correctionRows = new Map(
@@ -162,9 +212,54 @@ export function App() {
         </Typography>
       </Box>
       <Alert severity="info" icon={false}>
-        Импорт CSV/XLSX и подготовка прайса. Настройки наценки пока действуют
-        только в текущем окне приложения.
+        Настройки расчёта сохраняются между запусками. Для параметров поставщика
+        используйте именованные профили.
       </Alert>
+      <ProfilePanel
+        state={profiles}
+        busy={busy || !ready}
+        canSave={!!table && mappingValidation.valid && validMarkup}
+        onSelect={(profileId) =>
+          void run(async () =>
+            applyProfiles(
+              unwrap(await window.api.selectProfile({ profileId })),
+              true,
+            ),
+          )
+        }
+        onSave={(name, update) => void run(() => saveProfile(name, update))}
+        onRename={(name) =>
+          void run(async () => {
+            if (!activeProfile)
+              return
+
+            applyProfiles(
+              unwrap(
+                await window.api.renameProfile({
+                  profileId: activeProfile.id,
+                  name,
+                }),
+              ),
+              false,
+            )
+            setNotice('Профиль переименован.')
+          })
+        }
+        onDelete={() =>
+          void run(async () => {
+            if (!activeProfile)
+              return
+
+            applyProfiles(
+              unwrap(
+                await window.api.deleteProfile({ profileId: activeProfile.id }),
+              ),
+              true,
+            )
+            setNotice('Профиль удалён.')
+          })
+        }
+      />
       <Stepper
         activeStep={step}
         alternativeLabel
@@ -202,11 +297,14 @@ export function App() {
         </Typography>
         <Box hidden={step !== 0}>
           <ImportPanel
+            key={importRevision}
+            profile={activeProfile}
             busy={busy}
             ready={ready}
             table={table}
             run={run}
             onReset={() => {
+              setMappingNotice('')
               setCorrections({})
               setPendingCorrections(false)
               setTable(undefined)
@@ -219,13 +317,28 @@ export function App() {
               setPendingCorrections(false)
               setTable(imported)
               setResult(undefined)
-              setMapping(suggestMapping(imported.columns))
+              if (activeProfile) {
+                const restored = restoreProfileMapping(
+                  activeProfile,
+                  imported.columns,
+                )
+                setMapping(restored.mapping)
+                setMappingNotice(restored.warning ?? '')
+              } else {
+                setMapping(suggestMapping(imported.columns))
+                setMappingNotice('')
+              }
             }}
             onNext={() => setStep(1)}
           />
         </Box>
         {step === 1 && table && (
           <>
+            {mappingNotice && (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                {mappingNotice}
+              </Alert>
+            )}
             <MappingPanel
               table={table}
               mapping={mapping}
@@ -233,6 +346,7 @@ export function App() {
               onChange={(next) => {
                 setCorrections({})
                 setPendingCorrections(false)
+                setMappingNotice('')
                 setMapping(next)
                 setResult(undefined)
                 setError('')

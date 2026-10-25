@@ -4,7 +4,7 @@ import type {
   ImportedTable,
   ProcessResult,
   Result,
-  Settings,
+  ImportOptions,
 } from '../shared/api'
 import {
   identifier,
@@ -24,13 +24,25 @@ import {
   savePriceList,
 } from './services/export-file'
 import type { LoadedSource } from './services/import-file'
+import type { ProfileStore } from './services/profile-store'
+import { validateMapping } from '../shared/mapping'
 
-export function registerIpc(window: BrowserWindow, rendererUrl: string): void {
+export function registerIpc(
+  window: BrowserWindow,
+  rendererUrl: string,
+  profiles: ProfileStore,
+): void {
   let imported: ImportedTable | undefined
   let source: LoadedSource | undefined
   let opening = false
   let processed: ProcessResult | undefined
-  let sessionSettings: Settings = { markup: 20 }
+  let importedOptions: ImportOptions = {
+    delimiter: ',',
+    encoding: 'utf-8',
+    sheet: '',
+    headerRow: 1,
+  }
+  let importedFormat: 'csv' | 'xlsx' = 'csv'
   const handlers: string[] = []
 
   function handle<T>(
@@ -105,12 +117,22 @@ export function registerIpc(window: BrowserWindow, rendererUrl: string): void {
     processed = undefined
     if (data.source === 'demo') {
       imported = demoTable()
+      importedFormat = 'csv'
+      importedOptions = {
+        delimiter: ',',
+        encoding: 'utf-8',
+        sheet: '',
+        headerRow: 1,
+      }
     } else {
       const id = identifier(data.sourceId)
       if (!source || source.metadata.id !== id)
         throw new Error('Файл устарел. Выберите файл снова.')
 
-      imported = importSource(source, importOptions(data.options))
+      const options = importOptions(data.options)
+      imported = importSource(source, options)
+      importedOptions = options
+      importedFormat = source.metadata.format
     }
     return preview(imported)
   })
@@ -158,16 +180,59 @@ export function registerIpc(window: BrowserWindow, rendererUrl: string): void {
     return { canceled: false, path, count: snapshot.issues.length }
   })
 
-  handle(channels.getSettings, (input) => {
+  handle(channels.getSettings, async (input) => {
     if (input !== undefined)
       throw new Error('Этот запрос не принимает аргументов.')
 
-    return sessionSettings
+    return (await profiles.getState()).settings
   })
 
   handle(channels.saveSettings, (input) => {
-    sessionSettings = settings(input)
-    return sessionSettings
+    return profiles.saveSettings(input)
+  })
+
+  handle(channels.getProfiles, (input) => {
+    if (input !== undefined)
+      throw new Error('Этот запрос не принимает аргументов.')
+
+    return profiles.getState()
+  })
+  handle(channels.saveProfile, (input) => {
+    const data = object(input)
+    if (!imported || identifier(data.importId) !== imported.id)
+      throw new Error('Сначала загрузите актуальную таблицу для профиля.')
+
+    const mapping = validateMapping(data.mapping, imported.columns.length)
+    if (!mapping.valid)
+      throw new Error(Object.values(mapping.errors).join(' '))
+
+    return profiles.saveProfile({
+      id: data.profileId,
+      name: data.name,
+      settings: settings(data.settings),
+      format: importedFormat,
+      importOptions: importedOptions,
+      columns: imported.columns,
+      mapping: mapping.mapping,
+    })
+  })
+  handle(channels.selectProfile, async (input) => {
+    const state = await profiles.selectProfile(object(input).profileId)
+    imported = undefined
+    processed = undefined
+    source = undefined
+    return state
+  })
+  handle(channels.renameProfile, (input) => {
+    const data = object(input)
+    return profiles.renameProfile(data.profileId, data.name)
+  })
+  handle(channels.deleteProfile, async (input) => {
+    const state = await profiles.deleteProfile(object(input).profileId)
+    imported = undefined
+    processed = undefined
+    source = undefined
+    return state
   })
 
   window.on('closed', () =>

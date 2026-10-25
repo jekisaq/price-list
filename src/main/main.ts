@@ -1,8 +1,9 @@
 import { app, BrowserWindow } from 'electron'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { registerIpc } from './ipc'
+import { ProfileStore } from './services/profile-store'
 
-const createWindow = async () => {
+const createWindow = async (profiles: ProfileStore) => {
   const win = new BrowserWindow({
     width: 1100,
     height: 800,
@@ -25,11 +26,12 @@ const createWindow = async () => {
   const rendererUrl = devUrl
     ? new URL(devUrl).href
     : pathToFileURL(rendererPath).href
-  registerIpc(win, rendererUrl)
+  registerIpc(win, rendererUrl, profiles)
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   win.webContents.on('will-navigate', (event, url) => {
     if (url !== rendererUrl)
       event.preventDefault()
+
   })
 
   if (devUrl) {
@@ -42,11 +44,12 @@ const createWindow = async () => {
 app
   .whenReady()
   .then(async () => {
-    await createWindow()
+    const profiles = new ProfileStore(app.getPath('userData'))
+    await createWindow(profiles)
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
-        void createWindow()
+        void createWindow(profiles)
       }
     })
   })
@@ -58,4 +61,5 @@ app
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin')
     app.quit()
+
 })

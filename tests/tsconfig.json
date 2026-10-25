@@ -8,5 +8,5 @@
     "rootDir": ".",
     "outDir": "../out/tests"
   },
-  "include": ["electron.smoke.cts"]
+  "include": ["*.cts"]
 }

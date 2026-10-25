@@ -6,6 +6,11 @@ export const channels = {
   exportReport: 'price-list:export-report',
   getSettings: 'price-list:settings:get',
   saveSettings: 'price-list:settings:save',
+  getProfiles: 'price-list:profiles:get',
+  saveProfile: 'price-list:profiles:save',
+  selectProfile: 'price-list:profiles:select',
+  renameProfile: 'price-list:profiles:rename',
+  deleteProfile: 'price-list:profiles:delete',
 } as const
 
 export const productFields = [
@@ -46,6 +51,29 @@ export interface ImportOptions {
   encoding: CsvEncoding
   sheet: string
   headerRow: number
+}
+export interface SupplierProfile {
+  id: string
+  name: string
+  format: 'csv' | 'xlsx'
+  importOptions: ImportOptions
+  columns: string[]
+  mapping: Mapping
+  settings: Settings
+}
+export interface ProfilesState {
+  profiles: SupplierProfile[]
+  activeProfileId: string | null
+  settings: Settings
+  warning: string | null
+  readOnly: boolean
+}
+export interface SaveProfileRequest {
+  profileId?: string
+  name: string
+  importId: string
+  mapping: Mapping
+  settings: Settings
 }
 export type ImportRequest =
   | { source: 'demo' }
@@ -120,4 +148,14 @@ export interface PriceListApi {
   exportReport(request: { resultId: string }): Promise<Result<ExportResult>>
   getSettings(): Promise<Result<Settings>>
   saveSettings(request: Settings): Promise<Result<Settings>>
+  getProfiles(): Promise<Result<ProfilesState>>
+  saveProfile(request: SaveProfileRequest): Promise<Result<ProfilesState>>
+  selectProfile(request: {
+    profileId: string | null
+  }): Promise<Result<ProfilesState>>
+  renameProfile(request: {
+    profileId: string
+    name: string
+  }): Promise<Result<ProfilesState>>
+  deleteProfile(request: { profileId: string }): Promise<Result<ProfilesState>>
 }
