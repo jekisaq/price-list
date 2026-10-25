@@ -3,6 +3,7 @@ export const channels = {
   import: 'price-list:import',
   process: 'price-list:process',
   export: 'price-list:export',
+  exportReport: 'price-list:export-report',
   getSettings: 'price-list:settings:get',
   saveSettings: 'price-list:settings:save',
 } as const
@@ -67,10 +68,44 @@ export interface Product {
 }
 export interface ProcessResult {
   id: string
+  sourceName: string
   products: Product[]
-  errors: string[]
+  issues: ValidationIssue[]
+  rows: ProcessedRow[]
+  summary: {
+    processed: number
+    valid: number
+    invalid: number
+    duplicates: number
+    excluded: number
+  }
   duplicates: { sourceRow: number; sku: string; name: string }[]
   excludedRows: number[]
+}
+export interface ValidationIssue {
+  severity: 'error' | 'warning'
+  code: 'required' | 'price' | 'duplicate' | 'excluded' | 'import'
+  sourceRow: number | null
+  field: Field | null
+  columnIndex: number | null
+  columnName: string
+  value: string
+  message: string
+}
+export interface ProcessedRow {
+  sourceRow: number
+  sku: string
+  name: string
+  rawPrice: string
+  originalPrice: number | null
+  price: number | null
+  duplicate: boolean
+  excluded: boolean
+  hasErrors: boolean
+}
+export interface ExportRequest {
+  resultId: string
+  confirmExcluded?: boolean
 }
 export interface ExportResult {
   canceled: boolean
@@ -81,7 +116,8 @@ export interface PriceListApi {
   openFile(): Promise<Result<SourceFile | null>>
   importTable(request: ImportRequest): Promise<Result<ImportedTable>>
   processTable(request: ProcessRequest): Promise<Result<ProcessResult>>
-  exportTable(request: { resultId: string }): Promise<Result<ExportResult>>
+  exportTable(request: ExportRequest): Promise<Result<ExportResult>>
+  exportReport(request: { resultId: string }): Promise<Result<ExportResult>>
   getSettings(): Promise<Result<Settings>>
   saveSettings(request: Settings): Promise<Result<Settings>>
 }

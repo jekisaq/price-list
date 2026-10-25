@@ -13,8 +13,15 @@ import {
   object,
   processRequest,
   settings,
+  currentResult,
+  productExport,
 } from './validation'
-import { demoTable, processTable, toCsv } from './services/workflow'
+import {
+  demoTable,
+  processTable,
+  toCsv,
+  toReportCsv,
+} from './services/workflow'
 import { importSource, loadSource, preview } from './services/import-file'
 import type { LoadedSource } from './services/import-file'
 
@@ -123,14 +130,7 @@ export function registerIpc(window: BrowserWindow, rendererUrl: string): void {
   })
 
   handle(channels.export, async (input) => {
-    const id = identifier(object(input).resultId)
-    if (!processed || id !== processed.id)
-      throw new Error('Сначала выполните проверку таблицы.')
-
-    if (processed.errors.length || !processed.products.length)
-      throw new Error('Исправьте ошибки перед экспортом.')
-
-    const snapshot = processed
+    const snapshot = productExport(input, processed)
     const selection = await dialog.showSaveDialog(window, {
       title: 'Экспорт прайс-листа',
       defaultPath: 'price-list.csv',
@@ -140,6 +140,20 @@ export function registerIpc(window: BrowserWindow, rendererUrl: string): void {
       return { canceled: true }
 
     await writeFile(selection.filePath, toCsv(snapshot), 'utf8')
+    return { canceled: false, path: selection.filePath }
+  })
+
+  handle(channels.exportReport, async (input) => {
+    const snapshot = currentResult(input, processed)
+    const selection = await dialog.showSaveDialog(window, {
+      title: 'Экспорт отчёта об ошибках',
+      defaultPath: 'price-list-report.csv',
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+    })
+    if (selection.canceled || !selection.filePath)
+      return { canceled: true }
+
+    await writeFile(selection.filePath, toReportCsv(snapshot), 'utf8')
     return { canceled: false, path: selection.filePath }
   })
 

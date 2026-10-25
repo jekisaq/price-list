@@ -88,6 +88,19 @@ async function smoke() {
     })()`)
     await new Promise((resolveWait) => setTimeout(resolveWait, 50))
   }
+  async function confirmExclusions(checked: boolean) {
+    await evaluate(`(() => {
+      const label = [...document.querySelectorAll('label')].find(item => item.textContent.trim() === 'Подтверждаю пропуск перечисленных строк');
+      const checkbox = label?.querySelector('input[type="checkbox"]');
+      if (!checkbox) throw new Error('Confirmation checkbox not found');
+      if (checkbox.checked !== ${checked}) checkbox.click();
+    })()`)
+    await new Promise((resolveWait) => setTimeout(resolveWait, 50))
+  }
+  const saveDisabled = () =>
+    evaluate(
+      `[...document.querySelectorAll('button')].find(button => button.textContent === 'Сохранить CSV…').disabled`,
+    )
   assert.equal(await evaluate('typeof window.require'), 'undefined')
   assert.equal(
     await evaluate(
@@ -315,7 +328,7 @@ async function smoke() {
   )
   await changeField('Артикул — строка 3', '')
   await click('Пересчитать исправления')
-  await waitText('Строка 3: Артикул — обязательное поле.')
+  await waitText('Артикул — обязательное поле.')
   await changeField('Артикул — строка 3', '002')
   await waitText('Предпросмотр устарел')
   await click('Пересчитать исправления')
@@ -352,14 +365,135 @@ async function smoke() {
   await waitText('Исключены повторные строки: 3.')
   await waitText('1480.00')
   await click('Перейти к экспорту')
+  assert.equal(await saveDisabled(), true)
+  await confirmExclusions(true)
+  assert.equal(await saveDisabled(), false)
+  await confirmExclusions(false)
+  assert.equal(await saveDisabled(), true)
+  await confirmExclusions(true)
   await click('Сохранить CSV…')
   await waitText('Файл сохранён:')
   assert.ok(
     (await readFile(exportPath, 'utf8')).includes('"001";"Первый";"1480.00"'),
   )
 
+  await click('Назад')
+  await click('Изменить сопоставление')
+  await click('Проверить и рассчитать')
+  await click('Перейти к экспорту')
+  // Confirmation belongs to the calculated result and resets after reprocessing.
+  assert.equal(await saveDisabled(), true)
+  await confirmExclusions(true)
+  await capture('excluded-confirmation.png')
+
+  await click('Новый импорт')
+  const reportPath = resolve('out/tests/error-report.csv')
+  const invalidPath = resolve('out/tests/report-source.csv')
+  const extraRows = Array.from(
+    { length: 22 },
+    (_, index) => `${100 + index},Товар ${index + 1},30`,
+  )
+  await writeFile(
+    invalidPath,
+    [
+      'Артикул,Наименование,Цена',
+      '001,Первый,10',
+      '001,Второй,20',
+      '003,,не число',
+      '004,Корректный,30,Лишнее',
+      ...extraRows,
+    ].join('\n'),
+  )
+  dialog.showOpenDialog = async () => ({
+    canceled: false,
+    filePaths: [invalidPath],
+  })
+  await click('Выбрать CSV / XLSX…')
+  await waitText('Файл: report-source.csv')
+  await click('Показать предпросмотр')
+  await waitText('Строк товаров: 26')
+  await click('Перейти к сопоставлению')
+  await changeField('Обработка дублей', 'manual')
+  await changeField('Округление', 'nearest')
+  await changeField('Шаг округления', '0.01')
+  await click('Проверить и рассчитать')
+  await waitText('Строк с ошибками: 3.')
+  await waitText('Обработано строк: 26. Корректных строк: 23.')
+  await waitText('Строк в группах дублей: 2.')
+  await waitText('Экспорт прайса заблокирован.')
+  const visibleRows = () =>
+    evaluate(
+      `[...document.querySelectorAll('table[aria-label="Отчёт проверки"] tbody tr')].map(row => row.cells[0].textContent)`,
+    )
+  assert.equal(((await visibleRows()) as string[]).length, 20)
+  await evaluate(
+    `document.querySelector('button[aria-label="Следующая страница"]').click()`,
+  )
+  await waitText('21–26 из 26')
+  assert.equal(((await visibleRows()) as string[]).length, 6)
+  await changeField('Фильтр строк', 'errors')
+  assert.deepEqual(await visibleRows(), ['2', '3', '4'])
+  await waitText('колонка 3 «Цена». Значение: "не число"')
+  await changeField('Фильтр строк', 'duplicates')
+  assert.deepEqual(await visibleRows(), ['2', '3'])
+  await changeField('Фильтр строк', 'excluded')
+  await waitText('Нет строк для выбранного фильтра.')
+  await changeField('Фильтр строк', 'errors')
+  await evaluate(
+    `document.querySelector('table[aria-label="Отчёт проверки"]').scrollIntoView({block: 'center'})`,
+  )
+  await capture('validation-report.png')
+  dialog.showSaveDialog = async () => ({ canceled: true, filePath: '' })
+  await click('Сохранить отчёт CSV…')
+  await waitText('Сохранение отчёта отменено.')
+  dialog.showSaveDialog = async () => ({
+    canceled: false,
+    filePath: reportPath,
+  })
+  await click('Сохранить отчёт CSV…')
+  await waitText('Отчёт сохранён:')
+  const reportCsv = await readFile(reportPath, 'utf8')
+  assert.ok(reportCsv.includes('"4";"3";"Цена";"Цена";"не число";"Ошибка"'))
+  assert.ok(reportCsv.includes('"Предупреждение"'))
+  assert.ok(reportCsv.includes('report-source.csv'))
+  // Correct the settings and recalculate: duplicate errors become warnings.
+  await click('Изменить сопоставление')
+  await changeField('Обработка дублей', 'first')
+  await click('Проверить и рассчитать')
+  await waitText('Строк с ошибками: 1.')
+  await changeField('Фильтр строк', 'warnings')
+  assert.deepEqual(await visibleRows(), ['2', '3'])
+  await changeField('Фильтр строк', 'excluded')
+  assert.deepEqual(await visibleRows(), ['3'])
+  await click('Сохранить отчёт CSV…')
+  await waitText('Отчёт сохранён:')
+  assert.ok((await readFile(reportPath, 'utf8')).includes('"Да"'))
+  // Exercise the preload and main guards directly, independent of disabled UI controls.
+  const apiChecks = (await evaluate(`(async () => {
+    const imported = await window.api.importTable({ source: 'demo' });
+    if (!imported.ok) throw new Error(imported.error);
+    const processed = await window.api.processTable({ importId: imported.value.id,
+      mapping: { sku: 0, name: 1, price: 2 }, markup: 20, duplicatePolicy: 'first',
+      corrections: [{ sourceRow: 3, sku: '001' }] });
+    if (!processed.ok) throw new Error(processed.error);
+    const noConfirmation = await window.api.exportTable({ resultId: processed.value.id });
+    const malformed = await window.api.exportReport({ resultId: '../file' });
+    const oldId = processed.value.id;
+    await window.api.processTable({ importId: imported.value.id, mapping: { sku: 0, name: 1, price: 2 }, markup: 20 });
+    const stale = await window.api.exportReport({ resultId: oldId });
+    return { noConfirmation, malformed, stale };
+  })()`)) as {
+    noConfirmation: { ok: boolean; error: string }
+    malformed: { ok: boolean }
+    stale: { ok: boolean }
+  }
+  assert.equal(apiChecks.noConfirmation.ok, false)
+  assert.match(apiChecks.noConfirmation.error, /Подтвердите пропуск/)
+  assert.equal(apiChecks.malformed.ok, false)
+  assert.equal(apiChecks.stale.ok, false)
+
   console.log(
-    'PASS: imports, mapping suggestions, manual mapping, validation, live preview, skipped columns, leading zeros, duplicate corrections, rounding and export',
+    'PASS: imports, mapping suggestions, manual mapping, validation, live preview, skipped columns, leading zeros, duplicate corrections, rounding, report filters, report export and exclusion confirmation',
   )
 }
 

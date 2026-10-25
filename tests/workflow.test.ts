@@ -63,16 +63,22 @@ test('invalid rows and duplicates produce errors instead of silent data loss', (
     mapping: { sku: 0, name: 1, price: 2 },
     markup: 0,
   })
-  assert.equal(result.products.length, 3)
-  assert.equal(result.errors.length, 3)
+  assert.equal(result.products.length, 2)
+  assert.equal(
+    result.issues.filter((issue) => issue.severity === 'error').length,
+    4,
+  )
+  assert.equal(result.summary.invalid, 4)
 })
 
 test('CSV escapes quotes, delimiters and spreadsheet formulas', () => {
   const csv = toCsv({
+    ...processTable(demoTable(), {
+      importId: '',
+      mapping: { sku: 0, name: 1, price: 2 },
+      markup: 0,
+    }),
     id: 'test',
-    errors: [],
-    duplicates: [],
-    excludedRows: [],
     products: [
       {
         sku: '001',

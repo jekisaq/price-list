@@ -57,14 +57,16 @@ test('text normalization preserves case and leading zeros, prices have field-spe
     ['', '', '-1'],
   ]
   const result = processTable(table, request)
-  assert.equal(result.products[0]?.name, 'Блокнот А5')
-  assert.equal(result.products[0]?.originalPrice, 1234.56)
-  assert.equal(result.products[0]?.price, 1481.47)
+  assert.equal(result.rows[0]?.name, 'Блокнот А5')
+  assert.equal(result.rows[0]?.originalPrice, 1234.56)
+  assert.equal(result.rows[0]?.price, 1481.47)
   assert.equal(result.duplicates.length, 2)
-  assert.equal(result.products.length, 3)
-  assert.ok(result.errors.some((error) => error.includes('Артикул —')))
-  assert.ok(result.errors.some((error) => error.includes('Наименование —')))
-  assert.ok(result.errors.some((error) => error.includes('Цена —')))
+  assert.equal(result.products.length, 2)
+  assert.ok(result.issues.some((issue) => issue.message.includes('Артикул —')))
+  assert.ok(
+    result.issues.some((issue) => issue.message.includes('Наименование —')),
+  )
+  assert.ok(result.issues.some((issue) => issue.message.includes('Цена —')))
 })
 
 test('rounding uses exact integer arithmetic, including half-cent ties and step boundaries', () => {
@@ -127,12 +129,16 @@ test('duplicate rules select source order and disclose excluded physical rows', 
   assert.deepEqual(last.excludedRows, [5])
   assert.equal(first.products[0]?.price, 12)
   assert.equal(last.products[0]?.price, 24)
-  assert.equal(last.errors.length, 0)
+  assert.equal(
+    last.issues.filter((issue) => issue.severity === 'error').length,
+    0,
+  )
   assert.deepEqual(table, snapshot)
   table.rows[0]![2] = '-1'
   assert.ok(
-    processTable(table, { ...request, duplicatePolicy: 'last' }).errors.length >
-      0,
+    processTable(table, { ...request, duplicatePolicy: 'last' }).issues.filter(
+      (issue) => issue.severity === 'error',
+    ).length > 0,
   )
 })
 
@@ -141,10 +147,18 @@ test('manual corrections resolve duplicates without mutating the source or compo
   table.rows.push(['001', 'Другой товар', '1,05'])
   table.rowNumbers.push(8)
   const snapshot = structuredClone(table)
-  assert.equal(processTable(table, request).errors.length, 1)
+  assert.equal(
+    processTable(table, request).issues.filter(
+      (issue) => issue.severity === 'error',
+    ).length,
+    2,
+  )
   const corrected = { ...request, corrections: [{ sourceRow: 8, sku: '004' }] }
   const result = processTable(table, corrected)
-  assert.equal(result.errors.length, 0)
+  assert.equal(
+    result.issues.filter((issue) => issue.severity === 'error').length,
+    0,
+  )
   assert.equal(result.duplicates.length, 0)
   assert.equal(result.products[3]?.price, 1.26)
   assert.deepEqual(result.products, processTable(table, corrected).products)

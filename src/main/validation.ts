@@ -1,4 +1,9 @@
-import type { ImportOptions, ProcessRequest, Settings } from '../shared/api'
+import type {
+  ImportOptions,
+  ProcessRequest,
+  ProcessResult,
+  Settings,
+} from '../shared/api'
 import { validateMapping } from '../shared/mapping.ts'
 
 export function importOptions(value: unknown): ImportOptions {
@@ -50,6 +55,38 @@ export function identifier(value: unknown): string {
     throw new Error('Некорректный идентификатор операции.')
 
   return value
+}
+
+export function currentResult(
+  value: unknown,
+  result: ProcessResult | undefined,
+): ProcessResult {
+  const id = identifier(object(value).resultId)
+  if (!result || result.id !== id)
+    throw new Error('Результат устарел. Выполните проверку таблицы снова.')
+
+  return result
+}
+
+export function productExport(
+  value: unknown,
+  result: ProcessResult | undefined,
+): ProcessResult {
+  const snapshot = currentResult(value, result)
+  const { confirmExcluded } = object(value)
+  if (confirmExcluded !== undefined && typeof confirmExcluded !== 'boolean')
+    throw new Error('Некорректное подтверждение пропуска строк.')
+
+  if (
+    snapshot.issues.some((issue) => issue.severity === 'error') ||
+    !snapshot.products.length
+  )
+    throw new Error('Исправьте ошибки перед экспортом.')
+
+  if (snapshot.excludedRows.length > 0 && confirmExcluded !== true)
+    throw new Error('Подтвердите пропуск исключённых строк перед экспортом.')
+
+  return snapshot
 }
 
 export function settings(value: unknown): Settings {

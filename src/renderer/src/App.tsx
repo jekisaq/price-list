@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { ImportPanel } from './ImportPanel'
 import { MappingPanel } from './MappingPanel'
+import { ValidationReport } from './ValidationReport'
+import Checkbox from '@mui/material/Checkbox'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import { suggestMapping, validateMapping } from '../../shared/mapping'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -12,12 +15,6 @@ import Stack from '@mui/material/Stack'
 import Step from '@mui/material/Step'
 import StepLabel from '@mui/material/StepLabel'
 import Stepper from '@mui/material/Stepper'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import type {
@@ -54,6 +51,7 @@ export function App() {
   const [corrections, setCorrections] = useState<Record<number, string>>({})
   const [pendingCorrections, setPendingCorrections] = useState(false)
   const [result, setResult] = useState<ProcessResult>()
+  const [confirmedResult, setConfirmedResult] = useState('')
   const [busy, setBusy] = useState(false)
   const [ready, setReady] = useState(false)
   const [error, setError] = useState('')
@@ -128,6 +126,7 @@ export function App() {
         })),
       }),
     )
+    setConfirmedResult('')
     setResult(next)
     setPendingCorrections(false)
     setStep(2)
@@ -355,17 +354,24 @@ export function App() {
         )}
         {step === 2 && result && (
           <>
-            <Typography color="text.secondary" sx={{ mb: 2 }}>
-              Готово товаров: {result.products.length}. Ошибок:{' '}
-              {result.errors.length}.
-            </Typography>
-            {result.errors.length > 0 && (
-              <Box component="ul" sx={{ color: 'error.main' }}>
-                {result.errors.map((message, index) => (
-                  <li key={index}>{message}</li>
-                ))}
-              </Box>
-            )}
+            <ValidationReport
+              key={result.id}
+              result={result}
+              busy={busy}
+              stale={pendingCorrections}
+              onExport={() =>
+                void run(async () => {
+                  const exported = unwrap(
+                    await window.api.exportReport({ resultId: result.id }),
+                  )
+                  setNotice(
+                    exported.canceled
+                      ? 'Сохранение отчёта отменено. Можно попробовать снова.'
+                      : `Отчёт сохранён: ${exported.path}`,
+                  )
+                })
+              }
+            />
             {result.excludedRows.length > 0 && (
               <Alert severity="warning">
                 Исключены повторные строки: {result.excludedRows.join(', ')}.
@@ -404,30 +410,7 @@ export function App() {
                 Предпросмотр устарел. Пересчитайте исправления.
               </Alert>
             )}
-            <TableContainer sx={{ my: 3 }}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Строка</TableCell>
-                    <TableCell>Артикул</TableCell>
-                    <TableCell>Наименование</TableCell>
-                    <TableCell>Исходная цена</TableCell>
-                    <TableCell>Цена с наценкой</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {result.products.map((product) => (
-                    <TableRow key={product.sourceRow}>
-                      <TableCell>{product.sourceRow}</TableCell>
-                      <TableCell>{product.sku}</TableCell>
-                      <TableCell>{product.name}</TableCell>
-                      <TableCell>{product.originalPrice.toFixed(2)}</TableCell>
-                      <TableCell>{product.price.toFixed(2)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+
             <Stack
               direction="row"
               spacing={1.5}
@@ -445,7 +428,7 @@ export function App() {
                 disabled={
                   busy ||
                   pendingCorrections ||
-                  result.errors.length > 0 ||
+                  result.issues.some((issue) => issue.severity === 'error') ||
                   result.products.length === 0
                 }
                 onClick={() => setStep(3)}
@@ -458,9 +441,31 @@ export function App() {
         {step === 3 && result && (
           <>
             <Typography color="text.secondary" sx={{ mb: 2 }}>
-              Сохраните {result.products.length} товара в CSV: артикул,
+              Товаров к экспорту: {result.products.length}. Формат CSV: артикул,
               наименование и цена с наценкой.
             </Typography>
+            {result.excludedRows.length > 0 && (
+              <Stack spacing={1} sx={{ mb: 2 }}>
+                <Alert severity="warning">
+                  Исключены повторные строки: {result.excludedRows.join(', ')}.
+                  Товаров в файле: {result.products.length}.
+                </Alert>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      disabled={busy}
+                      checked={confirmedResult === result.id}
+                      onChange={(event) =>
+                        setConfirmedResult(
+                          event.target.checked ? result.id : '',
+                        )
+                      }
+                    />
+                  }
+                  label="Подтверждаю пропуск перечисленных строк"
+                />
+              </Stack>
+            )}
             <Stack
               direction="row"
               spacing={1.5}
@@ -479,11 +484,18 @@ export function App() {
                 Назад
               </Button>
               <Button
-                disabled={busy}
+                disabled={
+                  busy ||
+                  (result.excludedRows.length > 0 &&
+                    confirmedResult !== result.id)
+                }
                 onClick={() =>
                   void run(async () => {
                     const exported = unwrap(
-                      await window.api.exportTable({ resultId: result.id }),
+                      await window.api.exportTable({
+                        resultId: result.id,
+                        confirmExcluded: confirmedResult === result.id,
+                      }),
                     )
                     setNotice(
                       exported.canceled

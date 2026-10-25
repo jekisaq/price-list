@@ -5,6 +5,8 @@ import type {
   ImportedTable,
   ProcessRequest,
   ProcessResult,
+  Field,
+  ValidationIssue,
 } from '../../shared/api'
 
 // Optional demo source for trying the workflow without a file.
@@ -64,10 +66,31 @@ export function processTable(
 ): ProcessResult {
   const result: ProcessResult = {
     id: randomUUID(),
+    sourceName: table.name,
     products: [],
-    errors: [],
+    issues: [],
+    rows: [],
+    summary: {
+      processed: table.rows.length,
+      valid: 0,
+      invalid: 0,
+      duplicates: 0,
+      excluded: 0,
+    },
     duplicates: [],
     excludedRows: [],
+  }
+  for (const message of table.warnings) {
+    result.issues.push({
+      severity: 'warning',
+      code: 'import',
+      sourceRow: null,
+      field: null,
+      columnIndex: null,
+      columnName: '',
+      value: '',
+      message,
+    })
   }
   const corrections = new Map(
     request.corrections?.map((entry) => [entry.sourceRow, entry.sku]),
@@ -81,24 +104,60 @@ export function processTable(
       throw new Error('Исправление относится к неизвестной строке.')
 
   }
+  function addIssue(
+    sourceRow: number,
+    field: Field,
+    value: string,
+    code: ValidationIssue['code'],
+    message: string,
+    severity: ValidationIssue['severity'] = 'error',
+  ) {
+    const columnIndex = request.mapping[field]
+    result.issues.push({
+      severity,
+      code,
+      sourceRow,
+      field,
+      columnIndex,
+      columnName: table.columns[columnIndex] ?? '',
+      value,
+      message,
+    })
+  }
   const groups = new Map<string, number[]>()
   const normalized = table.rows.map((row, index) => {
     const sourceRow = sourceNumbers[index]!
     const mapped = mapSourceRow(row, request.mapping)
-    const sku = normalizeText(corrections.get(sourceRow) ?? mapped.sku ?? '')
+    const rawSku = corrections.get(sourceRow) ?? mapped.sku ?? ''
+    const sku = normalizeText(rawSku)
     const name = normalizeText(mapped.name ?? '')
-    const price = parsePrice(mapped.price ?? '')
+    const rawPrice = mapped.price ?? ''
+    const price = parsePrice(rawPrice)
     if (!sku)
-      result.errors.push(`Строка ${sourceRow}: Артикул — обязательное поле.`)
+      addIssue(
+        sourceRow,
+        'sku',
+        rawSku,
+        'required',
+        'Артикул — обязательное поле.',
+      )
 
     if (!name)
-      result.errors.push(
-        `Строка ${sourceRow}: Наименование — обязательное поле.`,
+      addIssue(
+        sourceRow,
+        'name',
+        mapped.name ?? '',
+        'required',
+        'Наименование — обязательное поле.',
       )
 
     if (price === null)
-      result.errors.push(
-        `Строка ${sourceRow}: Цена — введите число от 0 до 1 000 000 000, не более двух десятичных знаков.`,
+      addIssue(
+        sourceRow,
+        'price',
+        rawPrice,
+        'price',
+        'Цена — введите число от 0 до 1 000 000 000, не более двух десятичных знаков.',
       )
 
     if (sku) {
@@ -106,67 +165,135 @@ export function processTable(
       group.push(index)
       groups.set(sku, group)
     }
-    return { sourceRow, sku, name, price }
+    return { sourceRow, sku, rawSku, name, rawPrice, price }
   })
   const excluded = new Set<number>()
+  const duplicateIndexes = new Set<number>()
   for (const [sku, indexes] of groups) {
     if (indexes.length < 2)
       continue
 
+    const manual =
+      !request.duplicatePolicy || request.duplicatePolicy === 'manual'
+    const keep =
+      request.duplicatePolicy === 'last' ? indexes.at(-1)! : indexes[0]!
+    const firstRow = normalized[indexes[0]!]!.sourceRow
     for (const index of indexes) {
       const row = normalized[index]!
+      duplicateIndexes.add(index)
       result.duplicates.push({ sourceRow: row.sourceRow, sku, name: row.name })
-    }
-    const keep =
-      request.duplicatePolicy === 'last' ? indexes.at(-1) : indexes[0]
-    for (const index of indexes) {
-      if (index !== keep)
-        excluded.add(index)
-
-    }
-    if (!request.duplicatePolicy || request.duplicatePolicy === 'manual')
-      result.errors.push(
-        `Повторяющийся артикул ${sku}: строки ${indexes.map((index) => normalized[index]!.sourceRow).join(', ')}. Исправьте артикулы или выберите правило обработки дублей.`,
+      addIssue(
+        row.sourceRow,
+        'sku',
+        row.rawSku,
+        'duplicate',
+        `Повторяющийся артикул ${sku}: найден в ${indexes.length} строках, первая строка ${firstRow}. ${manual ? 'Исправьте артикулы или выберите правило обработки дублей.' : 'Применено выбранное правило обработки дублей.'}`,
+        manual ? 'error' : 'warning',
       )
-
-  }
-  normalized.forEach((row, index) => {
-    if (excluded.has(index)) {
-      if (request.duplicatePolicy && request.duplicatePolicy !== 'manual')
-        result.excludedRows.push(row.sourceRow)
-
-      return
+      if (!manual && index !== keep) {
+        excluded.add(index)
+        addIssue(
+          row.sourceRow,
+          'sku',
+          row.rawSku,
+          'excluded',
+          `Строка исключена. Сохранена строка ${normalized[keep]!.sourceRow} по правилу «${request.duplicatePolicy === 'last' ? 'Оставить последнюю строку' : 'Оставить первую строку'}».`,
+          'warning',
+        )
+      }
     }
-    if (!row.sku || !row.name || row.price === null)
+  }
+  const invalidRows = new Set(
+    result.issues
+      .filter((issue) => issue.severity === 'error')
+      .map((issue) => issue.sourceRow),
+  )
+  normalized.forEach((row, index) => {
+    const hasErrors = invalidRows.has(row.sourceRow)
+    const originalPrice = row.price === null ? null : Number(row.price) / 100
+    const price = row.price === null ? null : calculatePrice(row.price, request)
+    result.rows.push({
+      sourceRow: row.sourceRow,
+      sku: row.sku,
+      name: row.name,
+      rawPrice: row.rawPrice,
+      originalPrice,
+      price,
+      duplicate: duplicateIndexes.has(index),
+      excluded: excluded.has(index),
+      hasErrors,
+    })
+    if (excluded.has(index))
+      result.excludedRows.push(row.sourceRow)
+
+    if (
+      hasErrors ||
+      excluded.has(index) ||
+      originalPrice === null ||
+      price === null
+    )
       return
 
     result.products.push({
       sku: row.sku,
       name: row.name,
       sourceRow: row.sourceRow,
-      originalPrice: Number(row.price) / 100,
-      price: calculatePrice(row.price, request),
+      originalPrice,
+      price,
     })
   })
+  result.summary.invalid = invalidRows.size
+  result.summary.valid = table.rows.length - invalidRows.size
+  result.summary.duplicates = duplicateIndexes.size
+  result.summary.excluded = excluded.size
   return result
 }
 
-export function toCsv(result: ProcessResult): string {
+function serializeCsv(rows: string[][]): string {
   const cell = (value: string) => {
     const safe = /^\s*[=+@-]/.test(value) ? `'${value}` : value
     return `"${safe.replaceAll('"', '""')}"`
   }
-  return (
-    '\uFEFF' +
-    [
-      productFields.map((field) => field.label),
-      ...result.products.map((product) =>
-        productFields.map(({ key }) =>
-          key === 'price' ? product.price.toFixed(2) : product[key],
-        ),
+  return '\uFEFF' + rows.map((row) => row.map(cell).join(';')).join('\r\n')
+}
+
+export function toCsv(result: ProcessResult): string {
+  return serializeCsv([
+    productFields.map((field) => field.label),
+    ...result.products.map((product) =>
+      productFields.map(({ key }) =>
+        key === 'price' ? product.price.toFixed(2) : product[key],
       ),
-    ]
-      .map((row) => row.map(cell).join(';'))
-      .join('\r\n')
-  )
+    ),
+  ])
+}
+
+export function toReportCsv(result: ProcessResult): string {
+  const excludedRows = new Set(result.excludedRows)
+  return serializeCsv([
+    [
+      'Файл',
+      'Строка',
+      'Номер колонки',
+      'Колонка',
+      'Поле',
+      'Значение',
+      'Уровень',
+      'Причина',
+      'Исключена',
+    ],
+    ...result.issues.map((issue) => [
+      result.sourceName,
+      issue.sourceRow === null ? '' : String(issue.sourceRow),
+      issue.columnIndex === null ? '' : String(issue.columnIndex + 1),
+      issue.columnName,
+      productFields.find((field) => field.key === issue.field)?.label ?? '',
+      issue.value,
+      issue.severity === 'error' ? 'Ошибка' : 'Предупреждение',
+      issue.message,
+      issue.sourceRow !== null && excludedRows.has(issue.sourceRow)
+        ? 'Да'
+        : 'Нет',
+    ]),
+  ])
 }

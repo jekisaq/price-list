@@ -123,7 +123,10 @@ test('reordered supplier exports only the standard fields', async () => {
     table.columns.length,
   )
   const result = processTable(table, request)
-  assert.equal(result.errors.length, 0)
+  assert.equal(
+    result.issues.filter((issue) => issue.severity === 'error').length,
+    0,
+  )
   assert.deepEqual(result.products[0], {
     sku: 'ST-0001',
     name: 'Блокнот А5',

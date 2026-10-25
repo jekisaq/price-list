@@ -76,7 +76,8 @@ test('BOM, blank rows, alternate header and multiline records retain row numbers
         mapping: { sku: 0, name: 1, price: 2 },
         markup: 20,
       })
-      assert.match(result.errors[0] ?? '', /Строка 7:/)
+      assert.equal(result.issues[0]?.sourceRow, 7)
+      assert.equal(result.issues[0]?.field, 'price')
       assert.throws(
         () => importSource(source, { ...defaults, headerRow: 6 }),
         /заголовков/,
