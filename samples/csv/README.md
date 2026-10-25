@@ -29,5 +29,5 @@ Headers are on the first record. Keep SKU fields as text to preserve leading zer
   price; line 9 has a negative price. With the current first-occurrence duplicate
   rule, three products are valid and six records have issues.
 
-These files are test inputs for the upcoming real-file importer. The current
-application still uses its built-in demonstration table.
+Open these files with the application's CSV/XLSX picker. Select the separator
+listed above, UTF-8 encoding and header row 1, then build the preview.

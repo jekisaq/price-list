@@ -7,11 +7,21 @@ import type {
   Result,
   Settings,
 } from '../shared/api'
-import { identifier, object, processRequest, settings } from './validation'
+import {
+  identifier,
+  importOptions,
+  object,
+  processRequest,
+  settings,
+} from './validation'
 import { demoTable, processTable, toCsv } from './services/workflow'
+import { importSource, loadSource, preview } from './services/import-file'
+import type { LoadedSource } from './services/import-file'
 
 export function registerIpc(window: BrowserWindow, rendererUrl: string): void {
   let imported: ImportedTable | undefined
+  let source: LoadedSource | undefined
+  let opening = false
   let processed: ProcessResult | undefined
   let sessionSettings: Settings = { markup: 20 }
   const handlers: string[] = []
@@ -49,13 +59,53 @@ export function registerIpc(window: BrowserWindow, rendererUrl: string): void {
     )
   }
 
-  handle(channels.import, (input) => {
-    if (object(input).source !== 'demo')
-      throw new Error('Чтение файлов будет доступно на следующем этапе.')
+  handle(channels.openFile, async (input) => {
+    if (input !== undefined)
+      throw new Error('Этот запрос не принимает аргументов.')
 
-    imported = demoTable()
+    if (opening)
+      throw new Error('Дождитесь открытия файла.')
+
+    opening = true
+    try {
+      const selection = await dialog.showOpenDialog(window, {
+        title: 'Выберите таблицу поставщика',
+        properties: ['openFile'],
+        filters: [{ name: 'Таблицы поставщиков', extensions: ['csv', 'xlsx'] }],
+      })
+      if (selection.canceled || !selection.filePaths[0])
+        return null
+
+      const next = await loadSource(selection.filePaths[0])
+      source = next
+      imported = undefined
+      processed = undefined
+      return source.metadata
+    } finally {
+      opening = false
+    }
+  })
+
+  handle(channels.import, (input) => {
+    if (opening)
+      throw new Error('Дождитесь открытия файла.')
+
+    const data = object(input)
+    if (data.source !== 'demo' && data.source !== 'file')
+      throw new Error('Неизвестный источник таблицы.')
+
+    imported = undefined
     processed = undefined
-    return imported
+    if (data.source === 'demo') {
+      imported = demoTable()
+    } else {
+      const id = identifier(data.sourceId)
+      if (!source || source.metadata.id !== id)
+        throw new Error('Файл устарел. Выберите файл снова.')
+
+      imported = importSource(source, importOptions(data.options))
+    }
+    return preview(imported)
   })
 
   handle(channels.process, (input) => {
@@ -76,16 +126,19 @@ export function registerIpc(window: BrowserWindow, rendererUrl: string): void {
     const id = identifier(object(input).resultId)
     if (!processed || id !== processed.id)
       throw new Error('Сначала выполните проверку таблицы.')
+
     if (processed.errors.length || !processed.products.length)
       throw new Error('Исправьте ошибки перед экспортом.')
+
     const snapshot = processed
     const selection = await dialog.showSaveDialog(window, {
-      title: 'Экспорт демонстрационного прайса',
-      defaultPath: 'price-list-demo.csv',
+      title: 'Экспорт прайс-листа',
+      defaultPath: 'price-list.csv',
       filters: [{ name: 'CSV', extensions: ['csv'] }],
     })
     if (selection.canceled || !selection.filePath)
       return { canceled: true }
+
     await writeFile(selection.filePath, toCsv(snapshot), 'utf8')
     return { canceled: false, path: selection.filePath }
   })
@@ -93,6 +146,7 @@ export function registerIpc(window: BrowserWindow, rendererUrl: string): void {
   handle(channels.getSettings, (input) => {
     if (input !== undefined)
       throw new Error('Этот запрос не принимает аргументов.')
+
     return sessionSettings
   })
 
@@ -100,7 +154,7 @@ export function registerIpc(window: BrowserWindow, rendererUrl: string): void {
     sessionSettings = settings(input)
     return sessionSettings
   })
-  
+
   window.on('closed', () =>
     handlers.forEach((channel) => ipcMain.removeHandler(channel)),
   )

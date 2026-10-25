@@ -1,4 +1,5 @@
 export const channels = {
+  openFile: 'price-list:open-file',
   import: 'price-list:import',
   process: 'price-list:process',
   export: 'price-list:export',
@@ -16,7 +17,32 @@ export interface ImportedTable {
   name: string
   columns: string[]
   rows: string[][]
+  rowNumbers: number[]
+  totalRows: number
+  headerRow: number
+  warnings: string[]
 }
+export type CsvEncoding = 'utf-8' | 'windows-1251' | 'utf-16le'
+export type CsvDelimiter = ',' | ';' | '\t'
+export interface SourceFile {
+  id: string
+  name: string
+  format: 'csv' | 'xlsx'
+  sheets: string[]
+}
+export interface ImportOptions {
+  delimiter: CsvDelimiter
+  encoding: CsvEncoding
+  sheet: string
+  headerRow: number
+}
+export type ImportRequest =
+  | { source: 'demo' }
+  | {
+      source: 'file'
+      sourceId: string
+      options: ImportOptions
+    }
 export interface ProcessRequest {
   importId: string
   mapping: Mapping
@@ -38,7 +64,8 @@ export interface ExportResult {
 }
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
 export interface PriceListApi {
-  importTable(request: { source: 'demo' }): Promise<Result<ImportedTable>>
+  openFile(): Promise<Result<SourceFile | null>>
+  importTable(request: ImportRequest): Promise<Result<ImportedTable>>
   processTable(request: ProcessRequest): Promise<Result<ProcessResult>>
   exportTable(request: { resultId: string }): Promise<Result<ExportResult>>
   getSettings(): Promise<Result<Settings>>

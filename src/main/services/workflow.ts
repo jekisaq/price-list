@@ -5,12 +5,16 @@ import type {
   ProcessResult,
 } from '../../shared/api'
 
-// Adapter for stage 1. File readers will replace the demo source in stage 2.
+// Optional demo source for trying the workflow without a file.
 export function demoTable(): ImportedTable {
   return {
     id: randomUUID(),
     name: 'Демонстрационная таблица',
     columns: ['Код товара', 'Название', 'Стоимость'],
+    rowNumbers: [2, 3, 4],
+    totalRows: 3,
+    headerRow: 1,
+    warnings: [],
     rows: [
       ['001', 'Блокнот', '120'],
       ['002', 'Ручка', '35'],
@@ -27,6 +31,7 @@ export function processTable(
   const seen = new Set<string>()
 
   table.rows.forEach((row, index) => {
+    const sourceRow = table.rowNumbers[index] ?? index + table.headerRow + 1
     const sku = row[request.mapping.sku]?.trim() ?? ''
     const name = row[request.mapping.name]?.trim() ?? ''
     const rawPrice = row[request.mapping.price]?.trim() ?? ''
@@ -34,10 +39,10 @@ export function processTable(
 
     if (!sku || !name || !rawPrice || !Number.isFinite(price) || price < 0) {
       result.errors.push(
-        `Строка ${index + 2}: проверьте артикул, название и цену.`,
+        `Строка ${sourceRow}: проверьте артикул, название и цену.`,
       )
     } else if (seen.has(sku)) {
-      result.errors.push(`Строка ${index + 2}: повторяющийся артикул ${sku}.`)
+      result.errors.push(`Строка ${sourceRow}: повторяющийся артикул ${sku}.`)
     } else {
       seen.add(sku)
       result.products.push({
@@ -47,7 +52,7 @@ export function processTable(
       })
     }
   })
-  
+
   return result
 }
 

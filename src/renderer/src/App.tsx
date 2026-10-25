@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { ImportPanel } from './ImportPanel'
+import { ImportPreview } from './ImportPreview'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -118,8 +120,8 @@ export function App() {
         </Typography>
       </Box>
       <Alert severity="info" icon={false}>
-        Демонстрационный сценарий. Загрузка CSV/XLSX появится на следующем
-        этапе. Настройки пока действуют только в текущем окне приложения.
+        Импорт CSV/XLSX и подготовка прайса. Настройки наценки пока действуют
+        только в текущем окне приложения.
       </Alert>
       <Stepper
         activeStep={step}
@@ -156,55 +158,33 @@ export function App() {
         <Typography component="h2" variant="h5" gutterBottom>
           {steps[step]}
         </Typography>
-        {step === 0 && (
-          <>
-            <Typography color="text.secondary" sx={{ mb: 2 }}>
-              Проверьте весь путь на примере трёх товаров: блокнота, ручки и
-              папки.
-            </Typography>
-            <Button
-              disabled={busy || !ready}
-              onClick={() =>
-                void run(async () => {
-                  const imported = unwrap(
-                    await window.api.importTable({ source: 'demo' }),
-                  )
-                  setTable(imported)
-                  setResult(undefined)
-                  setMapping({ sku: 0, name: 1, price: 2 })
-                  setStep(1)
-                })
-              }
-            >
-              Загрузить демонстрационную таблицу
-            </Button>
-          </>
-        )}
+        <Box hidden={step !== 0}>
+          <ImportPanel
+            busy={busy}
+            ready={ready}
+            table={table}
+            run={run}
+            onReset={() => {
+              setTable(undefined)
+              setResult(undefined)
+              setNotice('')
+              setError('')
+            }}
+            onImported={(imported) => {
+              setTable(imported)
+              setResult(undefined)
+              setMapping({
+                sku: 0,
+                name: Math.min(1, imported.columns.length - 1),
+                price: Math.min(2, imported.columns.length - 1),
+              })
+            }}
+            onNext={() => setStep(1)}
+          />
+        </Box>
         {step === 1 && table && (
           <>
-            <Typography color="text.secondary" sx={{ mb: 2 }}>
-              {table.name} · {table.rows.length} строки
-            </Typography>
-            <TableContainer sx={{ my: 3 }}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    {table.columns.map((column, index) => (
-                      <TableCell key={index}>{column}</TableCell>
-                    ))}
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {table.rows.map((row, index) => (
-                    <TableRow key={index}>
-                      {row.map((cell, cellIndex) => (
-                        <TableCell key={cellIndex}>{cell}</TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+            <ImportPreview table={table} />
             <Box
               component="fieldset"
               disabled={busy}
