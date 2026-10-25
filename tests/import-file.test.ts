@@ -52,7 +52,7 @@ test('all sample CSV formats preserve data and physical source row numbers', asy
     await loadSource('samples/csv/supplier-reordered.csv'),
     defaults,
   )
-  assert.equal(reordered.columns[4], 'SKU')
+  assert.equal(reordered.columns[4], 'Артикул')
   const quoted = importSource(
     await loadSource('samples/csv/supplier-quoted.csv'),
     defaults,
@@ -66,7 +66,7 @@ test('all sample CSV formats preserve data and physical source row numbers', asy
 test('BOM, blank rows, alternate header and multiline records retain row numbers', async () => {
   await withFile(
     'headers.csv',
-    '\uFEFFSupplier\r\n\r\nSKU,Name,Price\r\n\r\n001,"multi\r\nline",10\r\n002,Bad,invalid',
+    '\uFEFFSupplier\r\n\r\nАртикул,Название,Цена\r\n\r\n001,"multi\r\nline",10\r\n002,Bad,invalid',
     async (path) => {
       const source = await loadSource(path)
       const table = importSource(source, { ...defaults, headerRow: 3 })
@@ -87,7 +87,7 @@ test('BOM, blank rows, alternate header and multiline records retain row numbers
 
 test('CSV encodings support Windows-1251 and UTF-16LE, reject invalid UTF-8', async () => {
   const windows = Buffer.concat([
-    Buffer.from('SKU,Name,Price\n001,'),
+    Buffer.from('c0f0f2e8eaf3eb2ccde0e7e2e0ede8e52cd6e5ede00a3030312c', 'hex'),
     Buffer.from([0xd0, 0xf3, 0xf7, 0xea, 0xe0]),
     Buffer.from(',35'),
   ])
@@ -102,7 +102,7 @@ test('CSV encodings support Windows-1251 and UTF-16LE, reject invalid UTF-8', as
   })
   await withFile(
     'utf16.csv',
-    Buffer.from('\uFEFFSKU\tName\tPrice\r\n001\tРучка\t35', 'utf16le'),
+    Buffer.from('\uFEFFАртикул\tНазвание\tЦена\r\n001\tРучка\t35', 'utf16le'),
     async (path) => {
       const table = importSource(await loadSource(path), {
         ...defaults,
@@ -116,7 +116,7 @@ test('CSV encodings support Windows-1251 and UTF-16LE, reject invalid UTF-8', as
 
 test('preview is bounded but processing uses all rows', async () => {
   const data =
-    'SKU,Name,Price\n' +
+    'Артикул,Название,Цена\n' +
     Array.from(
       { length: 150 },
       (_, i) => `${String(i).padStart(4, '0')},Product ${i},10`,
@@ -149,8 +149,8 @@ test('malformed, empty, header-only and unsupported files fail clearly', async (
   })
   for (const text of [
     '\n\n',
-    'SKU,Name,Price\n',
-    'SKU,Name,Price\n001,"bad,2',
+    'Артикул,Название,Цена\n',
+    'Артикул,Название,Цена\n001,"bad,2',
   ]) {
     await withFile('invalid.csv', text, async (path) => {
       const source = await loadSource(path)
@@ -162,7 +162,7 @@ test('malformed, empty, header-only and unsupported files fail clearly', async (
 test('ragged rows, missing headers and duplicate headers are explicit', async () => {
   await withFile(
     'ragged.csv',
-    'SKU,Name,Name\n001,A,B,10\n002,C',
+    'Артикул,Название,Название\n001,A,B,10\n002,C',
     async (path) => {
       const table = importSource(await loadSource(path), defaults)
       assert.equal(table.columns[3], 'Колонка 4')
@@ -177,7 +177,7 @@ test('XLSX sheet and header selection preserve text, formatted SKUs and formula 
   workbook.addWorksheet('Пустой')
   const sheet = workbook.addWorksheet('Прайс')
   sheet.addRow(['Supplier'])
-  sheet.addRow(['SKU', 'Name', 'Price'])
+  sheet.addRow(['Артикул', 'Название', 'Цена'])
   sheet.addRow(['0007', { richText: [{ text: 'Ручка' }] }, 35.5])
   sheet.addRow([8, 'Блокнот', { formula: '100+20', result: 120 }])
   sheet.getCell('A4').numFmt = '0000'

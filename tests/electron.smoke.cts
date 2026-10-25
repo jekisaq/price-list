@@ -11,6 +11,7 @@ const timeout = setTimeout(() => {
 }, 30000)
 const loaded = new Promise<BrowserWindow>((resolveWindow) => {
   app.once('browser-window-created', (_event, window) => {
+    window.webContents.setBackgroundThrottling(false)
     window.webContents.once('did-finish-load', () => resolveWindow(window))
   })
 })
@@ -20,6 +21,27 @@ async function smoke() {
   const window = await loaded
   const evaluate = (script: string) =>
     window.webContents.executeJavaScript(script) as Promise<unknown>
+
+  async function capture(name: string) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100))
+    
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const image = await window.webContents.capturePage()
+        await writeFile(resolve('out/tests', name), image.toPNG())
+        return
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          !error.message.includes('UnknownVizError') ||
+          attempt === 2
+        )
+          throw error
+
+        await new Promise((resolveWait) => setTimeout(resolveWait, 100))
+      }
+    }
+  }
 
   async function click(text: string) {
     for (let attempt = 0; attempt < 80; attempt++) {
@@ -55,7 +77,7 @@ async function smoke() {
 
   async function changeField(label: string, value: string) {
     await evaluate(`(() => {
-      const label = [...document.querySelectorAll('label')].find(item => item.textContent === ${JSON.stringify(label)});
+      const label = [...document.querySelectorAll('label')].find(item => item.textContent.replaceAll('*', '').trim() === ${JSON.stringify(label)});
       const field = label && document.getElementById(label.htmlFor);
       if (!field)
         throw new Error('Field not found');
@@ -96,10 +118,7 @@ async function smoke() {
   assert.ok(
     (await readFile(exportPath, 'utf8')).includes('"001";"Блокнот";"144.00"'),
   )
-  await writeFile(
-    resolve('out/tests/workflow.png'),
-    (await window.webContents.capturePage()).toPNG(),
-  )
+  await capture('workflow.png')
   await click('Новый импорт')
   await waitText('Загрузить демонстрационную таблицу')
 
@@ -164,10 +183,7 @@ async function smoke() {
   await changeField('Строка заголовков', '2')
   await click('Показать предпросмотр')
   await waitText('00042')
-  await writeFile(
-    resolve('out/tests/import-preview.png'),
-    (await window.webContents.capturePage()).toPNG(),
-  )
+  await capture('import-preview.png')
   await click('Перейти к сопоставлению')
   await click('Проверить и рассчитать')
   await waitText('12.00')
@@ -180,8 +196,102 @@ async function smoke() {
     ),
   )
 
+  await click('Новый импорт')
+  dialog.showOpenDialog = async () => ({
+    canceled: false,
+    filePaths: [resolve('samples/csv/supplier-reordered.csv')],
+  })
+  await click('Выбрать CSV / XLSX…')
+  await waitText('Файл: supplier-reordered.csv')
+  await click('Показать предпросмотр')
+  await waitText('Строк товаров: 6')
+  await click('Перейти к сопоставлению')
+  assert.deepEqual(
+    await evaluate(
+      `['sku', 'name', 'price'].map(key => document.getElementById('mapping-' + key).value)`,
+    ),
+    ['4', '2', '1'],
+  )
+  await changeField('Артикул', '4')
+  await changeField('Наименование', '2')
+  await changeField('Цена', '1')
+  const mappedText = () =>
+    evaluate(
+      `document.querySelector('table[aria-label="Предпросмотр сопоставления"]').innerText`,
+    )
+  assert.ok(String(await mappedText()).includes('ST-0001'))
+  await waitText('Пропускаемые колонки (2)')
+  await changeField('Цена', '')
+  assert.equal(
+    await evaluate(`document.querySelector('#mapping-price').value`),
+    '',
+  )
+  assert.equal(
+    await evaluate(
+      `[...document.querySelectorAll('button')].find(button => button.textContent === 'Проверить и рассчитать').disabled`,
+    ),
+    true,
+  )
+  await changeField('Цена', '4')
+  await waitText('Эта колонка уже выбрана для другого поля.')
+  await changeField('Цена', '0')
+  assert.ok(String(await mappedText()).includes('Канцтовары'))
+  await changeField('Цена', '1')
+  await evaluate(
+    `document.querySelector('table[aria-label="Предпросмотр сопоставления"]').scrollIntoView({block: 'center'})`,
+  )
+  await capture('mapping-preview.png')
+  await click('Проверить и рассчитать')
+  await waitText('Готово товаров: 6')
+  await click('Изменить сопоставление')
+  assert.equal(
+    await evaluate(`document.getElementById('mapping-sku').value`),
+    '4',
+  )
+  await click('Проверить и рассчитать')
+  await click('Перейти к экспорту')
+  await click('Сохранить CSV…')
+  await waitText('Файл сохранён:')
+  const reorderedCsv = await readFile(exportPath, 'utf8')
+  assert.ok(reorderedCsv.includes('"ST-0001";"Блокнот А5";"144.00"'))
+  assert.ok(!reorderedCsv.includes('Канцтовары'))
+
+  await click('Новый импорт')
+  const unknownPath = resolve('out/tests/unknown-headers.csv')
+  await writeFile(
+    unknownPath,
+    'Идентификатор,Текст,Тариф,Склад\n000001,Ручка,35,100',
+  )
+  dialog.showOpenDialog = async () => ({
+    canceled: false,
+    filePaths: [unknownPath],
+  })
+  await click('Выбрать CSV / XLSX…')
+  await waitText('Файл: unknown-headers.csv')
+  await click('Показать предпросмотр')
+  await waitText('Строк товаров: 1')
+  await click('Перейти к сопоставлению')
+  assert.deepEqual(
+    await evaluate(
+      `['sku', 'name', 'price'].map(key => document.getElementById('mapping-' + key).value)`,
+    ),
+    ['', '', ''],
+  )
+  await changeField('Артикул', '0')
+  await changeField('Наименование', '1')
+  await changeField('Цена', '2')
+  assert.ok(String(await mappedText()).includes('000001'))
+  await click('Проверить и рассчитать')
+  await waitText('42.00')
+  await click('Перейти к экспорту')
+  await click('Сохранить CSV…')
+  await waitText('Файл сохранён:')
+  assert.ok(
+    (await readFile(exportPath, 'utf8')).includes('"000001";"Ручка";"42.00"'),
+  )
+
   console.log(
-    'PASS: isolation, validation, demo, CSV/XLSX imports, options, preview invalidation, cancellation and export',
+    'PASS: imports, mapping suggestions, manual mapping, validation, live preview, skipped columns, leading zeros and export',
   )
 }
 

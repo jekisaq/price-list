@@ -1,4 +1,5 @@
 import type { ImportOptions, ProcessRequest, Settings } from '../shared/api'
+import { validateMapping } from '../shared/mapping.ts'
 
 export function importOptions(value: unknown): ImportOptions {
   const data = object(value)
@@ -69,30 +70,13 @@ export function processRequest(
   columnCount: number,
 ): ProcessRequest {
   const data = object(value)
-  const mapping = object(data.mapping)
-  const indexes = [mapping.sku, mapping.name, mapping.price]
-  if (
-    indexes.some(
-      (index) =>
-        typeof index !== 'number' ||
-        !Number.isInteger(index) ||
-        index < 0 ||
-        index >= columnCount,
-    )
-  ) {
-    throw new Error('Для каждого поля нужно выбрать существующую колонку.')
-  }
-
-  if (new Set(indexes).size !== 3)
-    throw new Error('Выберите разные колонки для каждого поля.')
+  const validation = validateMapping(data.mapping, columnCount)
+  if (!validation.valid)
+    throw new Error(Object.values(validation.errors).join(' '))
 
   return {
     importId: identifier(data.importId),
-    mapping: {
-      sku: mapping.sku as number,
-      name: mapping.name as number,
-      price: mapping.price as number,
-    },
+    mapping: validation.mapping,
     ...settings(data),
   }
 }

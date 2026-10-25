@@ -8,15 +8,15 @@ Headers are on the first record. Keep SKU fields as text to preserve leading zer
 | --- | ---: | --- | --- | --- |
 | supplier-basic.csv | 10 | Comma | Dot | Normal import with Russian headers and leading-zero SKUs |
 | supplier-semicolon.csv | 8 | Semicolon | Comma | Russian number format and alternative headers |
-| supplier-reordered.csv | 6 | Comma | Dot | English headers, reordered columns and extra fields |
+| supplier-reordered.csv | 6 | Comma | Dot | Russian headers, reordered columns and extra fields |
 | supplier-quoted.csv | 5 | Comma | Dot | Quoted commas, escaped quotes, multiline field and empty optional field |
 | supplier-invalid.csv | 9 | Comma | Dot | Duplicate SKU and invalid required values |
 
 ## Column mapping
 
-- Basic, quoted and invalid: `Код товара` → SKU, `Название` → name, `Стоимость` → price.
-- Semicolon: `Артикул` → SKU, `Наименование` → name, `Цена закупки` → price.
-- Reordered: `SKU` → SKU, `Product Name` → name, `Unit Price` → price.
+- Basic, quoted and invalid: `Код товара` → `Артикул`, `Название` → `Наименование`, `Стоимость` → `Цена`.
+- Semicolon: `Артикул` → `Артикул`, `Наименование` → `Наименование`, `Цена закупки` → `Цена`.
+- Reordered: `Артикул` → `Артикул`, `Наименование` → `Наименование`, `Цена` → `Цена`.
 - Stock, category and notes can be ignored for the initial import.
 
 ## Expected checks

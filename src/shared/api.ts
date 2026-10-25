@@ -7,8 +7,15 @@ export const channels = {
   saveSettings: 'price-list:settings:save',
 } as const
 
-export type Field = 'sku' | 'name' | 'price'
+export const productFields = [
+  { key: 'sku', label: 'Артикул', required: true },
+  { key: 'name', label: 'Наименование', required: true },
+  { key: 'price', label: 'Цена', required: true },
+] as const
+
+export type Field = (typeof productFields)[number]['key']
 export type Mapping = Record<Field, number>
+export type DraftMapping = Record<Field, number | null>
 export interface Settings {
   markup: number
 }

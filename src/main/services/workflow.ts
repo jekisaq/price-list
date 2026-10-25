@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { productFields } from '../../shared/api.ts'
+import { mapSourceRow } from '../../shared/mapping.ts'
 import type {
   ImportedTable,
   ProcessRequest,
@@ -32,9 +34,10 @@ export function processTable(
 
   table.rows.forEach((row, index) => {
     const sourceRow = table.rowNumbers[index] ?? index + table.headerRow + 1
-    const sku = row[request.mapping.sku]?.trim() ?? ''
-    const name = row[request.mapping.name]?.trim() ?? ''
-    const rawPrice = row[request.mapping.price]?.trim() ?? ''
+    const mapped = mapSourceRow(row, request.mapping)
+    const sku = mapped.sku?.trim() ?? ''
+    const name = mapped.name?.trim() ?? ''
+    const rawPrice = mapped.price?.trim() ?? ''
     const price = Number(rawPrice.replace(',', '.'))
 
     if (!sku || !name || !rawPrice || !Number.isFinite(price) || price < 0) {
@@ -64,12 +67,12 @@ export function toCsv(result: ProcessResult): string {
   return (
     '\uFEFF' +
     [
-      ['Артикул', 'Наименование', 'Цена'],
-      ...result.products.map((product) => [
-        product.sku,
-        product.name,
-        product.price.toFixed(2),
-      ]),
+      productFields.map((field) => field.label),
+      ...result.products.map((product) =>
+        productFields.map(({ key }) =>
+          key === 'price' ? product.price.toFixed(2) : product[key],
+        ),
+      ),
     ]
       .map((row) => row.map(cell).join(';'))
       .join('\r\n')

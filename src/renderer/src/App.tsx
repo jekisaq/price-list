@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ImportPanel } from './ImportPanel'
-import { ImportPreview } from './ImportPreview'
+import { MappingPanel } from './MappingPanel'
+import { suggestMapping, validateMapping } from '../../shared/mapping'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -20,20 +21,13 @@ import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import type {
-  Field,
+  DraftMapping,
   ImportedTable,
-  Mapping,
   ProcessResult,
   Result,
 } from '../../shared/api'
 
 const steps = ['Загрузка', 'Сопоставление', 'Проверка', 'Экспорт']
-const fields: { key: Field; label: string }[] = [
-  { key: 'sku', label: 'Артикул' },
-  { key: 'name', label: 'Наименование' },
-  { key: 'price', label: 'Цена' },
-]
-
 function unwrap<T>(result: Result<T>): T {
   if (!result.ok)
     throw new Error(result.error)
@@ -44,7 +38,11 @@ function unwrap<T>(result: Result<T>): T {
 export function App() {
   const [step, setStep] = useState(0)
   const [table, setTable] = useState<ImportedTable>()
-  const [mapping, setMapping] = useState<Mapping>({ sku: 0, name: 1, price: 2 })
+  const [mapping, setMapping] = useState<DraftMapping>({
+    sku: null,
+    name: null,
+    price: null,
+  })
   const [markup, setMarkup] = useState('20')
   const [result, setResult] = useState<ProcessResult>()
   const [busy, setBusy] = useState(false)
@@ -95,7 +93,7 @@ export function App() {
     }
   }
 
-  const validMapping = new Set(Object.values(mapping)).size === 3
+  const mappingValidation = validateMapping(mapping, table?.columns.length ?? 0)
   const validMarkup =
     markup.trim() !== '' &&
     Number.isFinite(Number(markup)) &&
@@ -173,78 +171,42 @@ export function App() {
             onImported={(imported) => {
               setTable(imported)
               setResult(undefined)
-              setMapping({
-                sku: 0,
-                name: Math.min(1, imported.columns.length - 1),
-                price: Math.min(2, imported.columns.length - 1),
-              })
+              setMapping(suggestMapping(imported.columns))
             }}
             onNext={() => setStep(1)}
           />
         </Box>
         {step === 1 && table && (
           <>
-            <ImportPreview table={table} />
-            <Box
-              component="fieldset"
+            <MappingPanel
+              table={table}
+              mapping={mapping}
+              busy={busy}
+              onChange={(next) => {
+                setMapping(next)
+                setResult(undefined)
+                setError('')
+                setNotice('')
+              }}
+            />
+            <TextField
+              label="Наценка, %"
               disabled={busy}
-              sx={{ border: 0, p: 0, my: 3, minWidth: 0 }}
-            >
-              <Typography component="legend" sx={{ mb: 2, fontWeight: 600 }}>
-                Колонки результата
-              </Typography>
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-                  gap: 2,
-                }}
-              >
-                {fields.map((field) => (
-                  <TextField
-                    key={field.key}
-                    label={field.label}
-                    select
-                    disabled={busy}
-                    slotProps={{ select: { native: true } }}
-                    value={mapping[field.key]}
-                    onChange={(event) => {
-                      setMapping({
-                        ...mapping,
-                        [field.key]: Number(event.target.value),
-                      })
-                      setResult(undefined)
-                    }}
-                  >
-                    {table.columns.map((column, index) => (
-                      <option value={index} key={index}>
-                        {column}
-                      </option>
-                    ))}
-                  </TextField>
-                ))}
-                <TextField
-                  label="Наценка, %"
-                  disabled={busy}
-                  error={!validMarkup}
-                  helperText={
-                    !validMarkup ? 'Введите наценку от 0 до 1000%.' : ' '
-                  }
-                  type="number"
-                  slotProps={{ htmlInput: { min: 0, max: 1000, step: 0.1 } }}
-                  value={markup}
-                  onChange={(event) => {
-                    setMarkup(event.target.value)
-                    setResult(undefined)
-                  }}
-                />
-              </Box>
-            </Box>
-            {!validMapping && (
-              <Typography color="error" sx={{ mb: 2 }}>
-                Для каждого поля выберите отдельную колонку.
-              </Typography>
-            )}
+              error={!validMarkup}
+              helperText={
+                !validMarkup
+                  ? 'Введите наценку от 0 до 1000%.'
+                  : 'Применяется на следующем шаге'
+              }
+              type="number"
+              slotProps={{ htmlInput: { min: 0, max: 1000, step: 0.1 } }}
+              value={markup}
+              sx={{ maxWidth: 300, mt: 1 }}
+              onChange={(event) => {
+                setMarkup(event.target.value)
+                setResult(undefined)
+              }}
+            />
             <Stack
               direction="row"
               spacing={1.5}
@@ -263,9 +225,14 @@ export function App() {
                 Назад
               </Button>
               <Button
-                disabled={busy || !validMapping || !validMarkup}
+                disabled={busy || !mappingValidation.valid || !validMarkup}
                 onClick={() =>
                   void run(async () => {
+                    if (!mappingValidation.valid)
+                      throw new Error(
+                        'Проверьте сопоставление обязательных полей.',
+                      )
+
                     setResult(undefined)
                     unwrap(
                       await window.api.saveSettings({ markup: Number(markup) }),
@@ -274,7 +241,7 @@ export function App() {
                       unwrap(
                         await window.api.processTable({
                           importId: table.id,
-                          mapping,
+                          mapping: mappingValidation.mapping,
                           markup: Number(markup),
                         }),
                       ),
