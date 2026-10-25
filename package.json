@@ -2,7 +2,7 @@
   "name": "price-list",
   "version": "1.0.0",
   "description": "Desktop-приложение, которое превращает таблицу поставщика в готовый прайс магазина",
-  "main": "src/main/main.js",
+  "main": "src/main/main.ts",
   "private": "true",
   "license": "MIT",
   "author": {
@@ -17,5 +17,8 @@
   "type": "module",
   "devDependencies": {
     "electron": "^45.0.0"
+  },
+  "dependencies": {
+    "typescript": "^7.0.2"
   }
 }
