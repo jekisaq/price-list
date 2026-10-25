@@ -1,4 +1,22 @@
 import { useEffect, useState } from 'react'
+import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import Container from '@mui/material/Container'
+import LinearProgress from '@mui/material/LinearProgress'
+import Paper from '@mui/material/Paper'
+import Stack from '@mui/material/Stack'
+import Step from '@mui/material/Step'
+import StepLabel from '@mui/material/StepLabel'
+import Stepper from '@mui/material/Stepper'
+import Table from '@mui/material/Table'
+import TableBody from '@mui/material/TableBody'
+import TableCell from '@mui/material/TableCell'
+import TableContainer from '@mui/material/TableContainer'
+import TableHead from '@mui/material/TableHead'
+import TableRow from '@mui/material/TableRow'
+import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 import type {
   Field,
   ImportedTable,
@@ -38,7 +56,7 @@ export function App() {
       .getSettings()
       .then((response) => {
         const settings = unwrap(response)
-        
+
         if (active) {
           setMarkup(String(settings.markup))
           setReady(true)
@@ -51,6 +69,7 @@ export function App() {
               ? reason.message
               : 'Не удалось загрузить настройки.',
           )
+
       })
     return () => {
       active = false
@@ -82,48 +101,68 @@ export function App() {
     Number(markup) <= 1000
 
   return (
-    <main>
-      <header>
-        <span className="eyebrow">PRICE LIST</span>
-        <h1>Подготовка прайс-листа</h1>
-        <p>От таблицы поставщика до единого формата магазина.</p>
-      </header>
-      <aside className="banner">
+    <Container component="main" maxWidth="md" sx={{ py: { xs: 3, sm: 5 } }}>
+      <Box component="header" sx={{ mb: 3 }}>
+        <Typography
+          variant="overline"
+          color="primary"
+          sx={{ letterSpacing: 2 }}
+        >
+          PRICE LIST
+        </Typography>
+        <Typography variant="h4" component="h1" gutterBottom>
+          Подготовка прайс-листа
+        </Typography>
+        <Typography color="text.secondary" sx={{ mb: 2 }}>
+          От таблицы поставщика до единого формата магазина.
+        </Typography>
+      </Box>
+      <Alert severity="info" icon={false}>
         Демонстрационный сценарий. Загрузка CSV/XLSX появится на следующем
         этапе. Настройки пока действуют только в текущем окне приложения.
-      </aside>
-      <nav aria-label="Этапы подготовки">
-        <ol className="steps">
-          {steps.map((label, index) => (
-            <li
-              key={label}
-              aria-current={step === index ? 'step' : undefined}
-              className={step === index ? 'active' : ''}
-            >
-              <span>{index + 1}</span> {label}
-            </li>
-          ))}
-        </ol>
-      </nav>
+      </Alert>
+      <Stepper
+        activeStep={step}
+        alternativeLabel
+        aria-label="Этапы подготовки"
+        sx={{ my: 4 }}
+      >
+        {steps.map((label, index) => (
+          <Step key={label} aria-current={step === index ? 'step' : undefined}>
+            <StepLabel>{label}</StepLabel>
+          </Step>
+        ))}
+      </Stepper>
       {error && (
-        <p role="alert" className="error">
+        <Alert severity="error" sx={{ mb: 2 }}>
           {error}
-        </p>
+        </Alert>
       )}
       {notice && (
-        <p role="status" className="notice">
+        <Alert
+          severity="info"
+          role="status"
+          sx={{ mb: 2, overflowWrap: 'anywhere' }}
+        >
           {notice}
-        </p>
+        </Alert>
       )}
-      <section className="card" aria-busy={busy}>
-        <h2>{steps[step]}</h2>
+      <Paper
+        component="section"
+        variant="outlined"
+        aria-busy={busy}
+        sx={{ p: { xs: 2, sm: 3 } }}
+      >
+        <Typography component="h2" variant="h5" gutterBottom>
+          {steps[step]}
+        </Typography>
         {step === 0 && (
           <>
-            <p>
+            <Typography color="text.secondary" sx={{ mb: 2 }}>
               Проверьте весь путь на примере трёх товаров: блокнота, ручки и
               папки.
-            </p>
-            <button
+            </Typography>
+            <Button
               disabled={busy || !ready}
               onClick={() =>
                 void run(async () => {
@@ -138,85 +177,102 @@ export function App() {
               }
             >
               Загрузить демонстрационную таблицу
-            </button>
+            </Button>
           </>
         )}
         {step === 1 && table && (
           <>
-            <p>
+            <Typography color="text.secondary" sx={{ mb: 2 }}>
               {table.name} · {table.rows.length} строки
-            </p>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
+            </Typography>
+            <TableContainer sx={{ my: 3 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
                     {table.columns.map((column, index) => (
-                      <th key={index}>{column}</th>
+                      <TableCell key={index}>{column}</TableCell>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
                   {table.rows.map((row, index) => (
-                    <tr key={index}>
+                    <TableRow key={index}>
                       {row.map((cell, cellIndex) => (
-                        <td key={cellIndex}>{cell}</td>
+                        <TableCell key={cellIndex}>{cell}</TableCell>
                       ))}
-                    </tr>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
-            <fieldset disabled={busy}>
-              <legend>Колонки результата</legend>
-              <div className="fields">
+                </TableBody>
+              </Table>
+            </TableContainer>
+            <Box
+              component="fieldset"
+              disabled={busy}
+              sx={{ border: 0, p: 0, my: 3, minWidth: 0 }}
+            >
+              <Typography component="legend" sx={{ mb: 2, fontWeight: 600 }}>
+                Колонки результата
+              </Typography>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                  gap: 2,
+                }}
+              >
                 {fields.map((field) => (
-                  <label key={field.key}>
-                    {field.label}
-                    <select
-                      value={mapping[field.key]}
-                      onChange={(event) => {
-                        setMapping({
-                          ...mapping,
-                          [field.key]: Number(event.target.value),
-                        })
-                        setResult(undefined)
-                      }}
-                    >
-                      {table.columns.map((column, index) => (
-                        <option value={index} key={index}>
-                          {column}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ))}
-                <label>
-                  Наценка, %
-                  <input
-                    type="number"
-                    min="0"
-                    max="1000"
-                    step="0.1"
-                    value={markup}
+                  <TextField
+                    key={field.key}
+                    label={field.label}
+                    select
+                    disabled={busy}
+                    slotProps={{ select: { native: true } }}
+                    value={mapping[field.key]}
                     onChange={(event) => {
-                      setMarkup(event.target.value)
+                      setMapping({
+                        ...mapping,
+                        [field.key]: Number(event.target.value),
+                      })
                       setResult(undefined)
                     }}
-                  />
-                </label>
-              </div>
-            </fieldset>
+                  >
+                    {table.columns.map((column, index) => (
+                      <option value={index} key={index}>
+                        {column}
+                      </option>
+                    ))}
+                  </TextField>
+                ))}
+                <TextField
+                  label="Наценка, %"
+                  disabled={busy}
+                  error={!validMarkup}
+                  helperText={
+                    !validMarkup ? 'Введите наценку от 0 до 1000%.' : ' '
+                  }
+                  type="number"
+                  slotProps={{ htmlInput: { min: 0, max: 1000, step: 0.1 } }}
+                  value={markup}
+                  onChange={(event) => {
+                    setMarkup(event.target.value)
+                    setResult(undefined)
+                  }}
+                />
+              </Box>
+            </Box>
             {!validMapping && (
-              <p className="error">
+              <Typography color="error" sx={{ mb: 2 }}>
                 Для каждого поля выберите отдельную колонку.
-              </p>
+              </Typography>
             )}
-            {!validMarkup && (
-              <p className="error">Введите наценку от 0 до 1000%.</p>
-            )}
-            <div className="actions">
-              <button
-                className="secondary"
+            <Stack
+              direction="row"
+              spacing={1.5}
+              useFlexGap
+              sx={{ flexWrap: 'wrap', mt: 3 }}
+            >
+              <Button
+                variant="outlined"
                 disabled={busy}
                 onClick={() => {
                   setStep(0)
@@ -225,8 +281,8 @@ export function App() {
                 }}
               >
                 Назад
-              </button>
-              <button
+              </Button>
+              <Button
                 disabled={busy || !validMapping || !validMarkup}
                 onClick={() =>
                   void run(async () => {
@@ -248,67 +304,77 @@ export function App() {
                 }
               >
                 Проверить и рассчитать
-              </button>
-            </div>
+              </Button>
+            </Stack>
           </>
         )}
         {step === 2 && result && (
           <>
-            <p>
+            <Typography color="text.secondary" sx={{ mb: 2 }}>
               Готово товаров: {result.products.length}. Ошибок:{' '}
               {result.errors.length}.
-            </p>
+            </Typography>
             {result.errors.length > 0 && (
-              <ul className="error">
+              <Box component="ul" sx={{ color: 'error.main' }}>
                 {result.errors.map((message, index) => (
                   <li key={index}>{message}</li>
                 ))}
-              </ul>
+              </Box>
             )}
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Артикул</th>
-                    <th>Наименование</th>
-                    <th>Цена с наценкой</th>
-                  </tr>
-                </thead>
-                <tbody>
+            <TableContainer sx={{ my: 3 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Артикул</TableCell>
+                    <TableCell>Наименование</TableCell>
+                    <TableCell>Цена с наценкой</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
                   {result.products.map((product) => (
-                    <tr key={product.sku}>
-                      <td>{product.sku}</td>
-                      <td>{product.name}</td>
-                      <td>{product.price.toFixed(2)}</td>
-                    </tr>
+                    <TableRow key={product.sku}>
+                      <TableCell>{product.sku}</TableCell>
+                      <TableCell>{product.name}</TableCell>
+                      <TableCell>{product.price.toFixed(2)}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="actions">
-              <button className="secondary" onClick={() => setStep(1)}>
+                </TableBody>
+              </Table>
+            </TableContainer>
+            <Stack
+              direction="row"
+              spacing={1.5}
+              useFlexGap
+              sx={{ flexWrap: 'wrap', mt: 3 }}
+            >
+              <Button variant="outlined" onClick={() => setStep(1)}>
                 Изменить сопоставление
-              </button>
-              <button
+              </Button>
+              <Button
                 disabled={
                   result.errors.length > 0 || result.products.length === 0
                 }
                 onClick={() => setStep(3)}
               >
                 Перейти к экспорту
-              </button>
-            </div>
+              </Button>
+            </Stack>
           </>
         )}
         {step === 3 && result && (
           <>
-            <p>
+            <Typography color="text.secondary" sx={{ mb: 2 }}>
               Сохраните {result.products.length} товара в CSV: артикул,
               наименование и цена с наценкой.
-            </p>
-            <div className="actions">
-              <button
-                className="secondary"
+            </Typography>
+            <Stack
+              direction="row"
+              spacing={1.5}
+              useFlexGap
+              sx={{ flexWrap: 'wrap', mt: 3 }}
+            >
+              <Button
+                variant="outlined"
                 disabled={busy}
                 onClick={() => {
                   setStep(2)
@@ -317,8 +383,8 @@ export function App() {
                 }}
               >
                 Назад
-              </button>
-              <button
+              </Button>
+              <Button
                 disabled={busy}
                 onClick={() =>
                   void run(async () => {
@@ -334,9 +400,9 @@ export function App() {
                 }
               >
                 Сохранить CSV…
-              </button>
-              <button
-                className="secondary"
+              </Button>
+              <Button
+                variant="outlined"
                 disabled={busy}
                 onClick={() => {
                   setStep(0)
@@ -347,12 +413,17 @@ export function App() {
                 }}
               >
                 Новый импорт
-              </button>
-            </div>
+              </Button>
+            </Stack>
           </>
         )}
-        {busy && <p role="status">Выполняется операция…</p>}
-      </section>
-    </main>
+        {busy && (
+          <Box role="status" sx={{ mt: 3 }}>
+            <LinearProgress aria-label="Выполняется операция" />
+            <Typography sx={{ mt: 1 }}>Выполняется операция…</Typography>
+          </Box>
+        )}
+      </Paper>
+    </Container>
   )
 }

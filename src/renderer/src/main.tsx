@@ -1,7 +1,9 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import CssBaseline from '@mui/material/CssBaseline'
+import { ThemeProvider } from '@mui/material/styles'
 import { App } from './App'
-import './styles.css'
+import { theme } from './theme'
 
 const root = document.getElementById('root')
 if (!root)
@@ -9,6 +11,9 @@ if (!root)
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <App />
+    </ThemeProvider>
   </StrictMode>,
 )

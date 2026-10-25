@@ -39,6 +39,8 @@ Electron и инструменты electron-builder. Подпись релиза
 - `src/main/main.ts` — главный процесс и создание окна.
 - `src/preload/index.ts` — точка входа preload; собирается в CommonJS для sandbox.
 - `src/renderer/` — HTML и React-интерфейс.
+- Интерфейс использует Material UI (MUI) и Emotion; общая тема находится в
+  `src/renderer/src/theme.ts`. Для оформления используются компоненты MUI и `sx`.
 - `src/shared/api.ts` — общие контракты данных, API и имена IPC-каналов.
 - `src/main/ipc.ts` — обработчики IPC с проверкой отправителя и входных данных.
 - `src/main/services/workflow.ts` — демонстрационный источник, обработка и сериализация CSV.
