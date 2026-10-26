@@ -3,13 +3,14 @@ import { open } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
 import ExcelJS from 'exceljs'
 import { parse } from 'csv-parse/sync'
+import type { TaskContext } from './task-context'
 import type { Cell, Workbook } from 'exceljs'
 import type { ImportedTable, ImportOptions, SourceFile } from '../../shared/api'
 
-const MAX_BYTES = 20 * 1024 * 1024
-const MAX_ROWS = 100_000
-const MAX_COLUMNS = 256
-const MAX_CELLS = 1_000_000
+export const MAX_BYTES = 100 * 1024 * 1024
+export const MAX_ROWS = 500_000
+export const MAX_COLUMNS = 256
+export const MAX_CELLS = 4_000_000
 const PREVIEW_ROWS = 100
 
 export interface LoadedSource {
@@ -17,7 +18,7 @@ export interface LoadedSource {
   bytes: Buffer
   workbook?: Workbook
 }
-interface SourceRow {
+export interface SourceRow {
   number: number
   values: string[]
 }
@@ -26,7 +27,12 @@ interface CsvRecord {
   raw: string
 }
 
-export async function loadSource(path: string): Promise<LoadedSource> {
+export async function loadSource(
+  path: string,
+  context?: TaskContext,
+): Promise<LoadedSource> {
+  context?.check()
+  context?.progress('Чтение файла', 0)
   const extension = extname(path).toLowerCase()
   if (extension !== '.csv' && extension !== '.xlsx')
     throw new Error('Поддерживаются только файлы CSV и XLSX.')
@@ -39,7 +45,7 @@ export async function loadSource(path: string): Promise<LoadedSource> {
       throw new Error('Файл пуст или не является обычным файлом.')
 
     if (stat.size > MAX_BYTES)
-      throw new Error('Файл больше 20 МиБ. Разделите его на несколько файлов.')
+      throw new Error('Файл больше 100 МиБ. Разделите его на несколько файлов.')
 
     bytes = await file.readFile()
   } finally {
@@ -65,6 +71,7 @@ export async function loadSource(path: string): Promise<LoadedSource> {
       'Не удалось прочитать XLSX. Файл повреждён, защищён паролем или имеет другой формат.',
     )
   }
+  context?.check()
   metadata.sheets = workbook.worksheets.map((sheet) => sheet.name)
   if (!metadata.sheets.length)
     throw new Error('В XLSX нет листов.')
@@ -109,7 +116,7 @@ function csvRows(bytes: Buffer, options: ImportOptions): SourceRow[] {
           cells > MAX_CELLS
         )
           throw new Error(
-            'Превышен лимит: 100 000 строк, 256 колонок или 1 000 000 ячеек.',
+            'Превышен лимит: 500 000 строк, 256 колонок или 4 000 000 ячеек.',
           )
 
         rows.push(row)
@@ -158,6 +165,7 @@ function xlsxRows(
   source: LoadedSource,
   options: ImportOptions,
   warnings: Set<string>,
+  context?: TaskContext,
 ): SourceRow[] {
   const sheet = source.workbook?.getWorksheet(options.sheet)
   if (!sheet)
@@ -169,11 +177,15 @@ function xlsxRows(
     sheet.rowCount * sheet.columnCount > MAX_CELLS
   )
     throw new Error(
-      'Превышен лимит: 100 000 строк, 256 колонок или 1 000 000 ячеек.',
+      'Превышен лимит: 500 000 строк, 256 колонок или 4 000 000 ячеек.',
     )
 
   const rows: SourceRow[] = []
   sheet.eachRow((row, number) => {
+    if (number % 500 === 0) {
+      context?.check()
+      context?.progress('Чтение строк XLSX', number, sheet.rowCount)
+    }
     const values = Array.from({ length: row.cellCount }, (_, index) =>
       cellText(row.getCell(index + 1), warnings),
     )
@@ -185,12 +197,24 @@ function xlsxRows(
 export function importSource(
   source: LoadedSource,
   options: ImportOptions,
+  context?: TaskContext,
 ): ImportedTable {
   const warnings = new Set<string>()
   const records =
     source.metadata.format === 'csv'
       ? csvRows(source.bytes, options)
-      : xlsxRows(source, options, warnings)
+      : xlsxRows(source, options, warnings, context)
+  return buildTable(records, source.metadata, options, warnings, context)
+}
+
+export function buildTable(
+  records: SourceRow[],
+  metadata: SourceFile,
+  options: ImportOptions,
+  warnings = new Set<string>(),
+  context?: TaskContext,
+): ImportedTable {
+  context?.check()
   if (!records.some((row) => row.values.some((value) => value.trim() !== '')))
     throw new Error('Таблица пуста. Выберите другой файл или лист.')
 
@@ -212,7 +236,7 @@ export function importSource(
   )
   if (data.length * width > MAX_CELLS)
     throw new Error(
-      'После выравнивания колонок таблица превышает 1 000 000 ячеек.',
+      'После выравнивания колонок таблица превышает 4 000 000 ячеек.',
     )
 
   const columns = Array.from(
@@ -223,6 +247,9 @@ export function importSource(
     warnings.add(
       'Пустым заголовкам назначены имена «Колонка N». Проверьте строку заголовков и разделитель.',
     )
+
+  if (columns.some((column) => column.length > 1000))
+    throw new Error('Заголовок колонки длиннее 1000 символов.')
 
   if (new Set(columns).size !== columns.length)
     warnings.add(
@@ -241,11 +268,18 @@ export function importSource(
 
   return {
     id: randomUUID(),
-    name: source.metadata.name,
+    name: metadata.name,
     columns,
-    rows: data.map((row) =>
-      Array.from({ length: width }, (_, index) => row.values[index] ?? ''),
-    ),
+    rows: data.map((row, position) => {
+      if (position % 1000 === 0) {
+        context?.check()
+        context?.progress('Подготовка таблицы', position, data.length)
+      }
+      return Array.from(
+        { length: width },
+        (_, index) => row.values[index] ?? '',
+      )
+    }),
     rowNumbers: data.map((row) => row.number),
     totalRows: data.length,
     headerRow: options.headerRow,

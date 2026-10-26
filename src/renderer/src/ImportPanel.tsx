@@ -68,8 +68,8 @@ export function ImportPanel({
   return (
     <>
       <Typography color="text.secondary" sx={{ mb: 2 }}>
-        Выберите CSV или XLSX поставщика. До 20 МиБ, 100 000 строк, 256 колонок
-        и 1 000 000 ячеек. В предпросмотре отображаются первые 100 строк
+        Выберите CSV или XLSX поставщика. До 100 МиБ, 500 000 строк, 256 колонок
+        и 4 000 000 ячеек. В предпросмотре отображаются первые 100 строк
         товаров.
       </Typography>
       <Stack
@@ -257,7 +257,7 @@ export function ImportPanel({
       )}
       {table && (
         <>
-          <ImportPreview table={table} />
+          <ImportPreview key={table.id} table={table} />
           <Button disabled={busy} onClick={onNext}>
             Перейти к сопоставлению
           </Button>

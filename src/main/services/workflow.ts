@@ -1,3 +1,4 @@
+import type { TaskContext } from './task-context'
 import { randomUUID } from 'node:crypto'
 import { productFields } from '../../shared/api.ts'
 import { mapSourceRow } from '../../shared/mapping.ts'
@@ -63,6 +64,7 @@ export function calculatePrice(cents: bigint, request: ProcessRequest): number {
 export function processTable(
   table: ImportedTable,
   request: ProcessRequest,
+  context?: TaskContext,
 ): ProcessResult {
   const result: ProcessResult = {
     id: randomUUID(),
@@ -126,6 +128,10 @@ export function processTable(
   }
   const groups = new Map<string, number[]>()
   const normalized = table.rows.map((row, index) => {
+    if (index % 500 === 0) {
+      context?.check()
+      context?.progress('Проверка и нормализация', index, table.rows.length)
+    }
     const sourceRow = sourceNumbers[index]!
     const mapped = mapSourceRow(row, request.mapping)
     const rawSku = corrections.get(sourceRow) ?? mapped.sku ?? ''
@@ -169,7 +175,16 @@ export function processTable(
   })
   const excluded = new Set<number>()
   const duplicateIndexes = new Set<number>()
+  let groupedRows = 0
+  let groupedKeys = 0
+  const duplicateRows = Array.from(groups.values()).reduce((count, indexes) => count + indexes.length, 0)
   for (const [sku, indexes] of groups) {
+    if (groupedKeys++ % 500 === 0) {
+      context?.check()
+      context?.progress('Поиск дублей', groupedRows, duplicateRows)
+    }
+    const groupStart = groupedRows
+    groupedRows += indexes.length
     if (indexes.length < 2)
       continue
 
@@ -178,7 +193,13 @@ export function processTable(
     const keep =
       request.duplicatePolicy === 'last' ? indexes.at(-1)! : indexes[0]!
     const firstRow = normalized[indexes[0]!]!.sourceRow
+    let scanned = 0
     for (const index of indexes) {
+      if (scanned++ % 500 === 0) {
+        context?.check()
+        context?.progress('Поиск дублей', groupStart + scanned, duplicateRows)
+      }
+
       const row = normalized[index]!
       duplicateIndexes.add(index)
       result.duplicates.push({ sourceRow: row.sourceRow, sku, name: row.name })
@@ -209,6 +230,10 @@ export function processTable(
       .map((issue) => issue.sourceRow),
   )
   normalized.forEach((row, index) => {
+    if (index % 500 === 0) {
+      context?.check()
+      context?.progress('Расчёт цен', index, normalized.length)
+    }
     const hasErrors = invalidRows.has(row.sourceRow)
     const originalPrice = row.price === null ? null : Number(row.price) / 100
     const price = row.price === null ? null : calculatePrice(row.price, request)
@@ -249,7 +274,7 @@ export function processTable(
   return result
 }
 
-function serializeCsv(rows: string[][]): string {
+export function serializeCsv(rows: string[][]): string {
   const cell = (value: string) => {
     const safe = /^[\s\u0000-\u001f]*[=+@-]/.test(value) ? `'${value}` : value
     return `"${safe.replaceAll('"', '""')}"`

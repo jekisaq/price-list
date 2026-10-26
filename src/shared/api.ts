@@ -11,6 +11,10 @@ export const channels = {
   selectProfile: 'price-list:profiles:select',
   renameProfile: 'price-list:profiles:rename',
   deleteProfile: 'price-list:profiles:delete',
+  importPage: 'price-list:import-page',
+  reportPage: 'price-list:report-page',
+  operation: 'price-list:operation',
+  cancelOperation: 'price-list:cancel-operation',
 } as const
 
 export const productFields = [
@@ -131,6 +135,41 @@ export interface ProcessedRow {
   excluded: boolean
   hasErrors: boolean
 }
+export type ReportFilter =
+  'all' | 'errors' | 'duplicates' | 'warnings' | 'excluded' | 'ready'
+export interface ProcessView {
+  id: string
+  sourceName: string
+  summary: ProcessResult['summary']
+  productCount: number
+  errorCount: number
+  warningCount: number
+  importWarnings: ValidationIssue[]
+  excludedRows: number[]
+}
+export interface ReportPage {
+  rows: ProcessedRow[]
+  issues: ValidationIssue[]
+  total: number
+  offset: number
+}
+export interface PageRequest {
+  id: string
+  offset: number
+  limit: number
+}
+export interface OperationProgress {
+  id: string
+  kind: 'open' | 'import' | 'process' | 'export'
+  state: 'running' | 'completed' | 'canceled' | 'failed'
+  stage: string
+  processedRows: number
+  totalRows: number | null
+  percent: number | null
+  cancellable: boolean
+  invalidated?: boolean
+  workerHeapBytes?: number
+}
 export interface ExportRequest {
   resultId: string
   format: ExportFormat
@@ -139,11 +178,18 @@ export interface ExportRequest {
 export type ExportFormat = 'csv' | 'xlsx'
 export type ExportResult =
   { canceled: true } | { canceled: false; path: string; count: number }
-export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
+export type Result<T> =
+  { ok: true; value: T } | { ok: false; error: string; canceled?: boolean }
 export interface PriceListApi {
   openFile(): Promise<Result<SourceFile | null>>
   importTable(request: ImportRequest): Promise<Result<ImportedTable>>
-  processTable(request: ProcessRequest): Promise<Result<ProcessResult>>
+  processTable(request: ProcessRequest): Promise<Result<ProcessView>>
+  importPage(request: PageRequest): Promise<Result<ImportedTable>>
+  reportPage(
+    request: PageRequest & { filter: ReportFilter },
+  ): Promise<Result<ReportPage>>
+  onOperation(listener: (progress: OperationProgress) => void): () => void
+  cancelOperation(request: { id: string }): Promise<Result<boolean>>
   exportTable(request: ExportRequest): Promise<Result<ExportResult>>
   exportReport(request: { resultId: string }): Promise<Result<ExportResult>>
   getSettings(): Promise<Result<Settings>>

@@ -91,7 +91,7 @@ async function smoke() {
   }
   async function confirmExclusions(checked: boolean) {
     await evaluate(`(() => {
-      const label = [...document.querySelectorAll('label')].find(item => item.textContent.trim() === 'Подтверждаю пропуск перечисленных строк');
+      const label = [...document.querySelectorAll('label')].find(item => item.textContent.trim() === 'Подтверждаю пропуск исключённых строк');
       const checkbox = label?.querySelector('input[type="checkbox"]');
       if (!checkbox) throw new Error('Confirmation checkbox not found');
       if (checkbox.checked !== ${checked}) checkbox.click();

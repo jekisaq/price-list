@@ -1,8 +1,14 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { randomUUID } from 'node:crypto'
+import { dirname, join } from 'node:path'
+import { WorkerClient } from './worker-client'
+import { OperationCanceled } from './services/task-context'
 import { channels } from '../shared/api'
 import type {
   ImportedTable,
-  ProcessResult,
+  ProcessView,
+  ReportPage,
+  SourceFile,
   Result,
   ImportOptions,
 } from '../shared/api'
@@ -12,18 +18,9 @@ import {
   object,
   processRequest,
   settings,
-  currentResult,
-  productExport,
   exportFormat,
 } from './validation'
-import { demoTable, processTable, toReportCsv } from './services/workflow'
-import { importSource, loadSource, preview } from './services/import-file'
-import {
-  destinationPath,
-  saveFile,
-  savePriceList,
-} from './services/export-file'
-import type { LoadedSource } from './services/import-file'
+import { destinationPath } from './services/export-file'
 import type { ProfileStore } from './services/profile-store'
 import { validateMapping } from '../shared/mapping'
 
@@ -33,9 +30,21 @@ export function registerIpc(
   profiles: ProfileStore,
 ): void {
   let imported: ImportedTable | undefined
-  let source: LoadedSource | undefined
+  let source: SourceFile | undefined
   let opening = false
-  let processed: ProcessResult | undefined
+  let processed: ProcessView | undefined
+  const createClient = () =>
+    new WorkerClient(undefined, (progress) => {
+      if (progress.invalidated) {
+        imported = undefined
+        processed = undefined
+        source = undefined
+      }
+      if (!window.webContents.isDestroyed())
+        window.webContents.send(channels.operation, progress)
+
+    })
+  let client = createClient()
   let importedOptions: ImportOptions = {
     delimiter: ',',
     encoding: 'utf-8',
@@ -68,6 +77,7 @@ export function registerIpc(
         } catch (error) {
           return {
             ok: false,
+            canceled: error instanceof OperationCanceled,
             error:
               error instanceof Error
                 ? error.message
@@ -95,17 +105,21 @@ export function registerIpc(
       if (selection.canceled || !selection.filePaths[0])
         return null
 
-      const next = await loadSource(selection.filePaths[0])
+      const next = await client.request<SourceFile>(
+        'open',
+        { path: selection.filePaths[0] },
+        'open',
+      )
       source = next
       imported = undefined
       processed = undefined
-      return source.metadata
+      return source
     } finally {
       opening = false
     }
   })
 
-  handle(channels.import, (input) => {
+  handle(channels.import, async (input) => {
     if (opening)
       throw new Error('Дождитесь открытия файла.')
 
@@ -113,72 +127,83 @@ export function registerIpc(
     if (data.source !== 'demo' && data.source !== 'file')
       throw new Error('Неизвестный источник таблицы.')
 
-    imported = undefined
-    processed = undefined
-    if (data.source === 'demo') {
-      imported = demoTable()
-      importedFormat = 'csv'
-      importedOptions = {
-        delimiter: ',',
-        encoding: 'utf-8',
-        sheet: '',
-        headerRow: 1,
-      }
-    } else {
-      const id = identifier(data.sourceId)
-      if (!source || source.metadata.id !== id)
+    let options: ImportOptions = {
+      delimiter: ',',
+      encoding: 'utf-8',
+      sheet: '',
+      headerRow: 1,
+    }
+    if (data.source === 'file') {
+      if (!source || source.id !== identifier(data.sourceId))
         throw new Error('Файл устарел. Выберите файл снова.')
 
-      const options = importOptions(data.options)
-      imported = importSource(source, options)
-      importedOptions = options
-      importedFormat = source.metadata.format
+      options = importOptions(data.options)
     }
-    return preview(imported)
+    imported = undefined
+    processed = undefined
+    const next = await client.request<ImportedTable>('import', input, 'import')
+    imported = next
+    importedOptions = options
+    importedFormat = data.source === 'demo' ? 'csv' : source!.format
+    return next
   })
-
-  handle(channels.process, (input) => {
+  handle(channels.process, async (input) => {
     if (!imported)
       throw new Error('Сначала загрузите таблицу.')
 
     const request = processRequest(input, imported.columns.length)
-
     if (request.importId !== imported.id)
       throw new Error('Таблица устарела. Повторите загрузку.')
 
     processed = undefined
-    processed = processTable(imported, request)
+    processed = await client.request<ProcessView>('process', request, 'process')
     return processed
   })
+  handle(channels.importPage, (input) =>
+    client.request<ImportedTable>('importPage', pageRequest(input)),
+  )
+  handle(channels.reportPage, (input) => {
+    const data = object(input)
+    if (
+      data.filter !== 'all' &&
+      data.filter !== 'errors' &&
+      data.filter !== 'duplicates' &&
+      data.filter !== 'warnings' &&
+      data.filter !== 'excluded' &&
+      data.filter !== 'ready'
+    )
+      throw new Error('Некорректный фильтр отчёта.')
 
-  handle(channels.export, async (input) => {
-    const format = exportFormat(input)
-    const snapshot = productExport(input, processed)
+    return client.request<ReportPage>('reportPage', {
+      ...pageRequest(data),
+      filter: data.filter,
+    })
+  })
+  handle(channels.cancelOperation, (input) =>
+    client.cancel(identifier(object(input).id)),
+  )
+  async function exportResult(input: unknown, report: boolean) {
+    const data = object(input)
+    const format = report ? 'csv' : exportFormat(data)
+    await client.request<ProcessView>('checkExport', { ...data, report })
     const selection = await dialog.showSaveDialog(window, {
-      title: 'Экспорт прайс-листа',
-      defaultPath: `price-list.${format}`,
+      title: report ? 'Экспорт отчёта об ошибках' : 'Экспорт прайс-листа',
+      defaultPath: report ? 'price-list-report.csv' : `price-list.${format}`,
       filters: [{ name: format.toUpperCase(), extensions: [format] }],
     })
     if (selection.canceled || !selection.filePath)
-      return { canceled: true }
+      return { canceled: true } as const
 
-    return savePriceList(selection.filePath, format, snapshot)
-  })
-
-  handle(channels.exportReport, async (input) => {
-    const snapshot = currentResult(input, processed)
-    const selection = await dialog.showSaveDialog(window, {
-      title: 'Экспорт отчёта об ошибках',
-      defaultPath: 'price-list-report.csv',
-      filters: [{ name: 'CSV', extensions: ['csv'] }],
-    })
-    if (selection.canceled || !selection.filePath)
-      return { canceled: true }
-
-    const path = destinationPath(selection.filePath, 'csv')
-    await saveFile(path, toReportCsv(snapshot))
-    return { canceled: false, path, count: snapshot.issues.length }
-  })
+    const path = destinationPath(selection.filePath, format)
+    const temporary = join(dirname(path), `.price-list-${randomUUID()}.tmp`)
+    return client.request(
+      'export',
+      { ...data, report, path, temporary },
+      'export',
+    )
+  }
+  handle(channels.export, (input) => exportResult(input, false))
+  handle(channels.exportReport, (input) => exportResult(input, true))
 
   handle(channels.getSettings, async (input) => {
     if (input !== undefined)
@@ -221,6 +246,8 @@ export function registerIpc(
     imported = undefined
     processed = undefined
     source = undefined
+    await client.dispose()
+    client = createClient()
     return state
   })
   handle(channels.renameProfile, (input) => {
@@ -235,7 +262,33 @@ export function registerIpc(
     return state
   })
 
+  window.on('close', (event) => {
+    event.preventDefault()
+    void client.dispose().finally(() => {
+      if (!window.isDestroyed())
+        window.destroy()
+
+    })
+  })
   window.on('closed', () =>
     handlers.forEach((channel) => ipcMain.removeHandler(channel)),
   )
+}
+
+function pageRequest(value: unknown) {
+  const data = object(value)
+  const id = identifier(data.id)
+  if (
+    typeof data.offset !== 'number' ||
+    !Number.isSafeInteger(data.offset) ||
+    data.offset < 0 ||
+    data.offset > 500_000 ||
+    typeof data.limit !== 'number' ||
+    !Number.isInteger(data.limit) ||
+    data.limit < 1 ||
+    data.limit > 200
+  )
+    throw new Error('Некорректные параметры страницы.')
+
+  return { id, offset: data.offset, limit: data.limit }
 }

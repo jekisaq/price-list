@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ImportPanel } from './ImportPanel'
 import { MappingPanel } from './MappingPanel'
 import { ValidationReport } from './ValidationReport'
 import { ProfilePanel } from './ProfilePanel'
+import { OperationPanel } from './OperationPanel'
 import { restoreProfileMapping } from '../../shared/profiles'
 import Checkbox from '@mui/material/Checkbox'
 import FormControlLabel from '@mui/material/FormControlLabel'
@@ -23,7 +24,8 @@ import type {
   DraftMapping,
   ExportFormat,
   ImportedTable,
-  ProcessResult,
+  ProcessView,
+  OperationProgress,
   ProfilesState,
   Result,
   Settings,
@@ -57,14 +59,51 @@ export function App() {
   })
   const [corrections, setCorrections] = useState<Record<number, string>>({})
   const [pendingCorrections, setPendingCorrections] = useState(false)
-  const [result, setResult] = useState<ProcessResult>()
+  const [result, setResult] = useState<ProcessView>()
   const [confirmedResult, setConfirmedResult] = useState('')
   const [exportFormat, setExportFormat] = useState<ExportFormat>('csv')
+  const operationId = useRef<string | undefined>(undefined)
+  const [operation, setOperation] = useState<OperationProgress>()
   const [busy, setBusy] = useState(false)
   const [ready, setReady] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
+  useEffect(
+    () =>
+      window.api.onOperation((progress) => {
+        if (progress.state === 'running') {
+          operationId.current = progress.id
+          setOperation(progress)
+          return
+        }
+        if (operationId.current !== progress.id)
+          return
+
+        operationId.current = undefined
+        setOperation(undefined)
+        if (progress.invalidated) {
+          setTable(undefined)
+          setResult(undefined)
+          setStep(0)
+          setImportRevision((value) => value + 1)
+        } else if (
+          (progress.state === 'canceled' || progress.state === 'failed') &&
+          progress.kind === 'import'
+        ) {
+          setTable(undefined)
+          setResult(undefined)
+          setStep(0)
+        } else if (
+          (progress.state === 'canceled' || progress.state === 'failed') &&
+          progress.kind === 'process'
+        ) {
+          setResult(undefined)
+          setStep(1)
+        }
+      }),
+    [],
+  )
   useEffect(() => {
     let active = true
     window.api
@@ -98,6 +137,10 @@ export function App() {
     try {
       await action()
     } catch (reason) {
+      if (reason instanceof Error && reason.message === 'Операция отменена.') {
+        setNotice(reason.message)
+        return
+      }
       setError(
         reason instanceof Error
           ? reason.message
@@ -127,6 +170,7 @@ export function App() {
         current ? { ...current, settings: saved } : current,
       )
     }
+    setResult(undefined)
     const next = unwrap(
       await window.api.processTable({
         ...settings,
@@ -182,16 +226,6 @@ export function App() {
     )
     applyProfiles(next, false)
     setNotice('Профиль сохранён.')
-  }
-
-  const correctionRows = new Map(
-    Object.entries(corrections).map(([sourceRow, sku]) => [
-      Number(sourceRow),
-      { sourceRow: Number(sourceRow), sku, name: '' },
-    ]),
-  )
-  for (const row of result?.duplicates ?? []) {
-    correctionRows.set(row.sourceRow, row)
   }
 
   return (
@@ -272,6 +306,28 @@ export function App() {
           </Step>
         ))}
       </Stepper>
+      <OperationPanel
+        progress={operation}
+        onCancel={(id) => {
+          void window.api
+            .cancelOperation({ id })
+            .then((response) => {
+              if (!response.ok)
+                setError(response.error)
+
+              else if (!response.value)
+                     setNotice('Операция уже завершается или завершена.')
+
+            })
+            .catch((reason: unknown) =>
+              setError(
+                reason instanceof Error
+                  ? reason.message
+                  : 'Не удалось отменить операцию.',
+              ),
+            )
+        }}
+      />
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
@@ -475,6 +531,12 @@ export function App() {
               result={result}
               busy={busy}
               stale={pendingCorrections}
+              manual={(options.duplicatePolicy ?? 'manual') === 'manual'}
+              corrections={corrections}
+              onCorrection={(sourceRow, sku) => {
+                setCorrections({ ...corrections, [sourceRow]: sku })
+                setPendingCorrections(true)
+              }}
               onExport={() =>
                 void run(async () => {
                   const exported = unwrap(
@@ -490,36 +552,18 @@ export function App() {
             />
             {result.excludedRows.length > 0 && (
               <Alert severity="warning">
-                Исключены повторные строки: {result.excludedRows.join(', ')}.
+                Исключены повторные строки: {result.excludedRows.join(', ')}.{' '}
+                {result.summary.excluded > result.excludedRows.length
+                  ? `Показаны первые ${result.excludedRows.length} из ${result.summary.excluded}; все строки доступны в фильтре «Исключённые».`
+                  : ''}
               </Alert>
             )}
             {(options.duplicatePolicy ?? 'manual') === 'manual' &&
-              correctionRows.size > 0 && (
-                <Stack spacing={2} sx={{ my: 2 }}>
-                  <Typography>
-                    Исправьте артикулы повторяющихся товаров и пересчитайте
-                    результат.
-                  </Typography>
-                  {[...correctionRows.values()].map((row) => (
-                    <TextField
-                      key={row.sourceRow}
-                      label={`Артикул — строка ${row.sourceRow}`}
-                      helperText={row.name}
-                      disabled={busy}
-                      value={corrections[row.sourceRow] ?? row.sku}
-                      onChange={(event) => {
-                        setCorrections({
-                          ...corrections,
-                          [row.sourceRow]: event.target.value,
-                        })
-                        setPendingCorrections(true)
-                      }}
-                    />
-                  ))}
-                  <Button disabled={busy} onClick={() => void run(calculate)}>
-                    Пересчитать исправления
-                  </Button>
-                </Stack>
+              (result.summary.duplicates > 0 ||
+                Object.keys(corrections).length > 0) && (
+                <Button disabled={busy} onClick={() => void run(calculate)}>
+                  Пересчитать исправления
+                </Button>
               )}
             {pendingCorrections && (
               <Alert severity="info">
@@ -544,8 +588,8 @@ export function App() {
                 disabled={
                   busy ||
                   pendingCorrections ||
-                  result.issues.some((issue) => issue.severity === 'error') ||
-                  result.products.length === 0
+                  result.errorCount > 0 ||
+                  result.productCount === 0
                 }
                 onClick={() => setStep(3)}
               >
@@ -557,7 +601,7 @@ export function App() {
         {step === 3 && result && (
           <>
             <Typography color="text.secondary" sx={{ mb: 2 }}>
-              Товаров к экспорту: {result.products.length}. Колонки: артикул,
+              Товаров к экспорту: {result.productCount}. Колонки: артикул,
               наименование и цена с наценкой.
             </Typography>
             <TextField
@@ -584,8 +628,11 @@ export function App() {
             {result.excludedRows.length > 0 && (
               <Stack spacing={1} sx={{ mb: 2 }}>
                 <Alert severity="warning">
-                  Исключены повторные строки: {result.excludedRows.join(', ')}.
-                  Товаров в файле: {result.products.length}.
+                  Исключены повторные строки: {result.excludedRows.join(', ')}.{' '}
+                  {result.summary.excluded > result.excludedRows.length
+                    ? `Показаны первые ${result.excludedRows.length} из ${result.summary.excluded}; все строки доступны в фильтре «Исключённые».`
+                    : ''}
+                  Товаров в файле: {result.productCount}.
                 </Alert>
                 <FormControlLabel
                   control={
@@ -599,7 +646,7 @@ export function App() {
                       }
                     />
                   }
-                  label="Подтверждаю пропуск перечисленных строк"
+                  label="Подтверждаю пропуск исключённых строк"
                 />
               </Stack>
             )}
@@ -661,7 +708,7 @@ export function App() {
             </Stack>
           </>
         )}
-        {busy && (
+        {busy && !operation && (
           <Box role="status" sx={{ mt: 3 }}>
             <LinearProgress aria-label="Выполняется операция" />
             <Typography sx={{ mt: 1 }}>Выполняется операция…</Typography>

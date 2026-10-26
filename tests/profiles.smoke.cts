@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog } from 'electron'
 import assert from 'node:assert/strict'
 import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { basename, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import ExcelJS from 'exceljs'
 
@@ -119,6 +119,7 @@ async function smoke() {
   async function open(path: string) {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] })
     await click('Выбрать CSV / XLSX…')
+    await text(`Файл: ${basename(path)}`)
   }
   await text('Профили поставщиков')
   await wait(async () =>
