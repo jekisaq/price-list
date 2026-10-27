@@ -10,6 +10,8 @@ const createWindow = async (profiles: ProfileStore) => {
     minWidth: 760,
     minHeight: 600,
     autoHideMenuBar: true,
+    title: 'Price List',
+    icon: fileURLToPath(new URL('../../build/icon.png', import.meta.url)),
     webPreferences: {
       preload: fileURLToPath(new URL('../preload/index.cjs', import.meta.url)),
       contextIsolation: true,

@@ -35,6 +35,11 @@ export class WorkerClient {
       return this.worker
 
     const worker = new Worker(this.url, {
+      // Start independently of main's debugger and process-only flags.
+      // Type stripping is needed when running directly from TypeScript sources.
+      execArgv: process.execArgv.filter(
+        (argument) => argument === '--experimental-strip-types',
+      ),
       resourceLimits: { maxOldGenerationSizeMb: 512 },
     })
     this.worker = worker

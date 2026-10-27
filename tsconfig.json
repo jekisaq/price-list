@@ -13,6 +13,6 @@
     "esModuleInterop": true,
     "isolatedModules": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "electron.vite.config.ts", "tests/**/*.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "electron.vite.config.ts", "tests/**/*.ts", "scripts/**/*.ts"],
   "exclude": ["node_modules", "out", "release"]
 }

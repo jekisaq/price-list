@@ -1,16 +1,28 @@
 appId: com.price-list.desktop
 productName: Price List
+asar: true
+artifactName: Price-List-${version}-${arch}-Setup.${ext}
 directories:
   output: release
 files:
-  - out/**/*
+  - out/main/**/*
+  - out/preload/**/*
+  - out/renderer/**/*
+  - build/icon.png
   - package.json
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch:
         - x64
 nsis:
   oneClick: false
+  perMachine: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
+  shortcutName: Price List
+  uninstallDisplayName: Price List
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  deleteAppDataOnUninstall: false

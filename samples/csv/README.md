@@ -11,6 +11,7 @@ Headers are on the first record. Keep SKU fields as text to preserve leading zer
 | supplier-reordered.csv | 6 | Comma | Dot | Russian headers, reordered columns and extra fields |
 | supplier-quoted.csv | 5 | Comma | Dot | Quoted commas, escaped quotes, multiline field and empty optional field |
 | supplier-invalid.csv | 9 | Comma | Dot | Duplicate SKU and invalid required values |
+| supplier-duplicates.csv | 3 | Comma | Dot | First/last/manual duplicate resolution |
 
 ## Column mapping
 
@@ -26,8 +27,9 @@ Headers are on the first record. Keep SKU fields as text to preserve leading zer
 - Quoted: five product records despite the multiline note; literal quotes in the second name are preserved.
 - Invalid (physical line numbers, including header): line 4 duplicates SKU `001`;
   line 5 has no SKU; line 6 has no name; line 7 has no price; line 8 has a nonnumeric
-  price; line 9 has a negative price. With the current first-occurrence duplicate
-  rule, three products are valid and six records have issues.
+  price; line 9 has a negative price. Manual mode marks both duplicate records
+  as errors. First/last mode excludes one duplicate, but the five invalid rows
+  still block export until corrected in the source.
 
 Open these files with the application's CSV/XLSX picker. Select the separator
 listed above, UTF-8 encoding and header row 1, then build the preview.

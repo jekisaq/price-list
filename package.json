@@ -19,6 +19,9 @@
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "test:smoke": "npm run build && tsc -p tests/tsconfig.json && electron out/tests/electron.smoke.cjs && electron out/tests/profiles.smoke.cjs write && electron out/tests/profiles.smoke.cjs read && electron out/tests/profiles.smoke.cjs corrupt && electron out/tests/profiles.smoke.cjs future",
     "test:performance": "npm run build && tsc -p tests/tsconfig.json && electron out/tests/large.smoke.cjs",
+    "test:packaged": "npm run pack && node --experimental-strip-types tests/packaged.smoke.ts",
+    "samples": "node --experimental-strip-types scripts/generate-samples.ts",
+    "icon": "node --experimental-strip-types scripts/generate-icon.ts",
     "build": "npm run typecheck && electron-vite build",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder --win nsis"
