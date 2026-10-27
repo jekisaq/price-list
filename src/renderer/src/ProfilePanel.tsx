@@ -58,7 +58,10 @@ export function ProfilePanel({
             label="Профиль поставщика"
             value={state?.activeProfileId ?? ''}
             disabled={disabled}
-            slotProps={{ select: { native: true } }}
+            slotProps={{
+              select: { native: true },
+              inputLabel: { shrink: true },
+            }}
             onChange={(event) => onSelect(event.target.value || null)}
           >
             <option value="">Без профиля</option>
