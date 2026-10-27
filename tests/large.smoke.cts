@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, open, readdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { arch, cpus, platform, release, totalmem } from 'node:os'
 import ExcelJS from 'exceljs'
 
 const timeout = setTimeout(() => {
@@ -284,6 +285,17 @@ async function smoke() {
     resolve('out/tests/performance.json'),
     JSON.stringify(
       {
+        measuredAt: new Date().toISOString(),
+        system: {
+          platform: platform(),
+          release: release(),
+          arch: arch(),
+          cpu: cpus()[0]?.model,
+          logicalCpus: cpus().length,
+          memoryGiB: Math.round(totalmem() / (1024 ** 3)),
+          runtime: process.versions,
+          mode: 'production assets under Electron test harness; native dialogs stubbed',
+        },
         targets: {
           csvRows: 100000,
           csvMs: 10000,

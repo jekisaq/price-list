@@ -1,0 +1,64 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20261027065720
+Username: 82930C02-4497-4\WDAGUtilityAccount
+RunAs User: 82930C02-4497-4\WDAGUtilityAccount
+Configuration Name: 
+Machine: 82930C02-4497-4 (Microsoft Windows NT 10.0.26100.0)
+Host Application: powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\PriceListInput\validate.ps1
+Process ID: 6092
+PSVersion: 5.1.26100.6713
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.6713
+BuildVersion: 10.0.26100.6713
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is C:\PriceListResults\transcript.txt
+PASS: Clean guest: no Node.js, npm or Excel
+PASS: No previous installation
+PASS: No previous uninstall registration
+PASS: Installer SHA256 matches host
+PASS: NSIS installation succeeded
+PASS: Executable installed to a path with spaces and Cyrillic
+PASS: Per-user uninstall registration and version
+PASS: Shortcut exists: C:\Users\WDAGUtilityAccount\Desktop\Price List.lnk
+PASS: Shortcut points to installed executable
+PASS: Shortcut exists: C:\Users\WDAGUtilityAccount\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Price List.lnk
+PASS: Shortcut points to installed executable
+PASS: Main entry point reached
+PASS: Installed production application and renderer start offline
+PASS: Renderer Node integration is disabled
+PASS: CSV imports ten products and preserves leading zeroes
+PASS: Installed worker processes ten products
+PASS: csv export to Cyrillic path
+PASS: xlsx export to Cyrillic path
+PASS: csv roundtrip: ten products, SKU 001, price 144
+PASS: csv Russian export headers
+PASS: xlsx roundtrip: ten products, SKU 001, price 144
+PASS: xlsx Russian export headers
+PASS: Supplier XLSX imports with leading zeroes
+PASS: No temporary export files remain
+PASS: Application closes normally
+Application exit code: 0
+PASS: Application exit code is zero
+PASS: Main entry point reached
+PASS: Profile survives normal close and restart
+PASS: Application closes normally
+Application exit code: 0
+PASS: Application exit code is zero
+PASS: Profile persisted on disk
+PASS: Uninstaller exists
+PASS: Uninstaller removed the executable
+PASS: Uninstaller removed its registry entry
+PASS: Uninstaller removed shortcut
+PASS: Uninstaller removed shortcut
+PASS: Uninstall preserves profiles
+PASS: Uninstall preserves exported files
+PASS: Uninstall preserves exported files
+**********************
+Windows PowerShell transcript end
+End time: 20261027065745
+**********************

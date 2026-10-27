@@ -22,6 +22,8 @@
     "test:packaged": "npm run pack && node --experimental-strip-types tests/packaged.smoke.ts",
     "samples": "node --experimental-strip-types scripts/generate-samples.ts",
     "icon": "node --experimental-strip-types scripts/generate-icon.ts",
+    "demo:capture": "npm run samples && npm run build && tsc -p tests/tsconfig.json && electron out/tests/demo.capture.cjs",
+    "release:prepare": "node --experimental-strip-types scripts/prepare-release.ts",
     "build": "npm run typecheck && electron-vite build",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder --win nsis"
